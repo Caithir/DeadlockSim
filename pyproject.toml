@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "deadlock-sim"
+version = "0.1.0"
+description = "Deadlock game damage and combat simulator"
+requires-python = ">=3.10"
+dependencies = [
+    "pandas>=2.0",
+    "openpyxl>=3.1",
+]
+
+[project.scripts]
+deadlock-sim = "deadlock_sim.ui.cli:run_cli"
