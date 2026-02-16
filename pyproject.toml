@@ -10,7 +10,9 @@ requires-python = ">=3.10"
 dependencies = [
     "pandas>=2.0",
     "openpyxl>=3.1",
+    "dearpygui>=2.0",
 ]
 
 [project.scripts]
 deadlock-sim = "deadlock_sim.ui.cli:run_cli"
+deadlock-sim-gui = "deadlock_sim.ui.gui:run_gui"
