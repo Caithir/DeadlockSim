@@ -1,0 +1,21 @@
+name: Billy
+gun:
+  base_bullet_damage: 6.3
+  pellets: 1
+  alt_fire_type: zoom
+  alt_fire_pellets: 1
+  base_ammo: 30
+  base_fire_rate: 11.8
+  falloff_range_min: 14.0
+  falloff_range_max: 32.0
+survivability:
+  base_hp: 790.0
+  base_regen: 2.5
+  base_move_speed: 7.29
+  base_sprint: 2.0
+  base_stamina: 3
+scaling:
+  damage_gain: 0.165
+  hp_gain: 43.0
+  spirit_gain: 1.1
+hero_labs: false

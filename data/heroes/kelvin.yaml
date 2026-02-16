@@ -1,0 +1,21 @@
+name: Kelvin
+gun:
+  base_bullet_damage: 18.6
+  pellets: 1
+  alt_fire_type: zoom
+  alt_fire_pellets: 1
+  base_ammo: 14
+  base_fire_rate: 3.81
+  falloff_range_min: 20.0
+  falloff_range_max: 58.0
+survivability:
+  base_hp: 850.0
+  base_regen: 1.0
+  base_move_speed: 6.8
+  base_sprint: 0.5
+  base_stamina: 3
+scaling:
+  damage_gain: 0.42
+  hp_gain: 58.0
+  spirit_gain: 1.3
+hero_labs: false

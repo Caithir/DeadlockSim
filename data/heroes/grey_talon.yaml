@@ -1,0 +1,28 @@
+name: Grey Talon
+gun:
+  base_bullet_damage: 27.04
+  pellets: 1
+  alt_fire_type: zoom
+  alt_fire_pellets: 1
+  base_ammo: 17
+  base_fire_rate: 1.73
+  falloff_range_min: 18.0
+  falloff_range_max: 54.0
+survivability:
+  base_hp: 750.0
+  base_regen: 2.0
+  base_move_speed: 6.3
+  base_sprint: 0.5
+  base_stamina: 3
+scaling:
+  damage_gain: 1.0
+  hp_gain: 38.0
+  spirit_gain: 1.1
+hero_labs: false
+spirit_scaling:
+- stat: base damage
+  ratio: 0.08
+  bonus: 3.04
+- stat: movement speed
+  ratio: 0.034
+  bonus: 1.292

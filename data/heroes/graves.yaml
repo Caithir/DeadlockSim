@@ -1,0 +1,21 @@
+name: Graves
+gun:
+  base_bullet_damage: 4.2
+  pellets: 1
+  alt_fire_type: zoom
+  alt_fire_pellets: 1
+  base_ammo: 40
+  base_fire_rate: 9.8
+  falloff_range_min: 8.0
+  falloff_range_max: 18.0
+survivability:
+  base_hp: 700.0
+  base_regen: 1.0
+  base_move_speed: 6.6
+  base_sprint: 1.6
+  base_stamina: 2
+scaling:
+  damage_gain: 0.06
+  hp_gain: 33.0
+  spirit_gain: 1.1
+hero_labs: true

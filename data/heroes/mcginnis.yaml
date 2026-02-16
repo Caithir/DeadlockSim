@@ -1,0 +1,21 @@
+name: McGinnis
+gun:
+  base_bullet_damage: 6.72
+  pellets: 1
+  alt_fire_type: zoom
+  alt_fire_pellets: 1
+  base_ammo: 66
+  base_fire_rate: 11.9
+  falloff_range_min: 20.0
+  falloff_range_max: 58.0
+survivability:
+  base_hp: 750.0
+  base_regen: 2.0
+  base_move_speed: 6.8
+  base_sprint: 0.5
+  base_stamina: 2
+scaling:
+  damage_gain: 0.2
+  hp_gain: 52.0
+  spirit_gain: 1.1
+hero_labs: false

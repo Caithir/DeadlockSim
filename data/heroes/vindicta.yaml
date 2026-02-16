@@ -1,0 +1,25 @@
+name: Vindicta
+gun:
+  base_bullet_damage: 12.3
+  pellets: 1
+  alt_fire_type: zoom
+  alt_fire_pellets: 1
+  base_ammo: 22
+  base_fire_rate: 4.5428
+  falloff_range_min: 20.0
+  falloff_range_max: 64.0
+survivability:
+  base_hp: 725.0
+  base_regen: 2.0
+  base_move_speed: 9.0
+  base_sprint: 0.5
+  base_stamina: 2
+scaling:
+  damage_gain: 0.5
+  hp_gain: 29.0
+  spirit_gain: 1.1
+hero_labs: false
+spirit_scaling:
+- stat: fire rate
+  ratio: 0.14
+  bonus: 5.32

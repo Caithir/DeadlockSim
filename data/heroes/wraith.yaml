@@ -1,0 +1,25 @@
+name: Wraith
+gun:
+  base_bullet_damage: 5.64
+  pellets: 1
+  alt_fire_type: zoom
+  alt_fire_pellets: 1
+  base_ammo: 52
+  base_fire_rate: 10.6
+  falloff_range_min: 18.0
+  falloff_range_max: 52.0
+survivability:
+  base_hp: 700.0
+  base_regen: 2.0
+  base_move_speed: 7.3
+  base_sprint: 2.78
+  base_stamina: 3
+scaling:
+  damage_gain: 0.14
+  hp_gain: 35.0
+  spirit_gain: 1.1
+hero_labs: false
+spirit_scaling:
+- stat: sprint speed
+  ratio: 0.06
+  bonus: 2.28

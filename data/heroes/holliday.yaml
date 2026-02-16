@@ -1,0 +1,21 @@
+name: Holliday
+gun:
+  base_bullet_damage: 18.8
+  pellets: 1
+  alt_fire_type: zoom
+  alt_fire_pellets: 1
+  base_ammo: 10
+  base_fire_rate: 2.12
+  falloff_range_min: 20.0
+  falloff_range_max: 58.0
+survivability:
+  base_hp: 750.0
+  base_regen: 1.0
+  base_move_speed: 8.3
+  base_sprint: 0.5
+  base_stamina: 2
+scaling:
+  damage_gain: 1.14
+  hp_gain: 41.0
+  spirit_gain: 1.1
+hero_labs: false

@@ -1,0 +1,25 @@
+name: Sinclair
+gun:
+  base_bullet_damage: 17.8
+  pellets: 1
+  alt_fire_type: zoom
+  alt_fire_pellets: 1
+  base_ammo: 20
+  base_fire_rate: 2.72
+  falloff_range_min: 25.0
+  falloff_range_max: 61.0
+survivability:
+  base_hp: 700.0
+  base_regen: 2.0
+  base_move_speed: 7.6
+  base_sprint: 0.5
+  base_stamina: 3
+scaling:
+  damage_gain: 0.55
+  hp_gain: 38.0
+  spirit_gain: 1.1
+hero_labs: false
+spirit_scaling:
+- stat: movement speed
+  ratio: 0.023
+  bonus: 0.0

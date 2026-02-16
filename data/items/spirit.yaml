@@ -1,0 +1,23 @@
+category: spirit
+description: Spirit shop bonus tiers - bonus applied to spirit power
+tiers:
+- cost: 800
+  bonus: 7
+- cost: 1600
+  bonus: 11
+- cost: 2400
+  bonus: 15
+- cost: 3200
+  bonus: 19
+- cost: 4800
+  bonus: 25
+- cost: 7200
+  bonus: 32
+- cost: 9600
+  bonus: 44
+- cost: 16000
+  bonus: 56
+- cost: 22400
+  bonus: 69
+- cost: 28800
+  bonus: 81

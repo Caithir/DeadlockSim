@@ -1,0 +1,21 @@
+name: Pocket
+gun:
+  base_bullet_damage: 4.28
+  pellets: 7
+  alt_fire_type: zoom
+  alt_fire_pellets: 7
+  base_ammo: 11
+  base_fire_rate: 1.91
+  falloff_range_min: 16.0
+  falloff_range_max: 46.0
+survivability:
+  base_hp: 750.0
+  base_regen: 1.0
+  base_move_speed: 7.3
+  base_sprint: 0.5
+  base_stamina: 3
+scaling:
+  damage_gain: 0.22
+  hp_gain: 36.0
+  spirit_gain: 1.1
+hero_labs: false

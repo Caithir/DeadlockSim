@@ -1,0 +1,21 @@
+name: Calico
+gun:
+  base_bullet_damage: 2.09
+  pellets: 8
+  alt_fire_type: zoom
+  alt_fire_pellets: 8
+  base_ammo: 12
+  base_fire_rate: 4.76
+  falloff_range_min: 20.0
+  falloff_range_max: 58.0
+survivability:
+  base_hp: 700.0
+  base_regen: 2.0
+  base_move_speed: 7.6
+  base_sprint: 0.5
+  base_stamina: 3
+scaling:
+  damage_gain: 0.05
+  hp_gain: 37.0
+  spirit_gain: 1.1
+hero_labs: false
