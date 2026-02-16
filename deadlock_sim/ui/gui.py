@@ -7,6 +7,8 @@ is purely presentation.
 
 from __future__ import annotations
 
+import math
+
 import dearpygui.dearpygui as dpg
 
 from ..data import load_heroes, load_shop_tiers
@@ -32,6 +34,15 @@ def _get_hero(tag: str) -> HeroStats | None:
 def _pct(tag: str) -> float:
     """Read a percentage input and return as 0-1 fraction."""
     return dpg.get_value(tag) / 100.0
+
+
+def _fv(v: float, fmt: str = ".2f", zero_as_na: bool = True) -> str:
+    """Format a numeric value for display, showing '-' for missing/inf/nan."""
+    if isinstance(v, float) and (math.isinf(v) or math.isnan(v)):
+        return "-"
+    if zero_as_na and v == 0:
+        return "-"
+    return f"{v:{fmt}}"
 
 
 # ── Tab: Hero Stats ──────────────────────────────────────────────
@@ -74,24 +85,25 @@ def _on_hero_stats_changed(sender, app_data) -> None:
             dpg.add_table_column(label="Stat", width_fixed=True, init_width_or_weight=200)
             dpg.add_table_column(label="Value", width_fixed=True, init_width_or_weight=120)
 
+            has_gun = hero.base_bullet_damage > 0 or hero.base_fire_rate > 0
             stats = [
-                ("Bullet Damage", f"{hero.base_bullet_damage:.2f}"),
-                ("Pellets", f"{hero.pellets}"),
-                ("Fire Rate", f"{hero.base_fire_rate:.2f} /s"),
-                ("Base DPS", f"{hero.base_dps:.2f}"),
-                ("Magazine", f"{hero.base_ammo}"),
-                ("DPM", f"{hero.base_dpm:.2f}"),
-                ("Falloff Range", f"{hero.falloff_range_min:.0f}m - {hero.falloff_range_max:.0f}m"),
+                ("Bullet Damage", f"{hero.base_bullet_damage:.2f}" if has_gun else "-"),
+                ("Pellets", f"{hero.pellets}" if has_gun else "-"),
+                ("Fire Rate", f"{hero.base_fire_rate:.2f} /s" if hero.base_fire_rate > 0 else "-"),
+                ("Base DPS", _fv(hero.base_dps)),
+                ("Magazine", _fv(hero.base_ammo, "d")),
+                ("DPM", _fv(hero.base_dpm)),
+                ("Falloff Range", f"{hero.falloff_range_min:.0f}m - {hero.falloff_range_max:.0f}m" if has_gun else "-"),
                 ("", ""),
-                ("HP", f"{hero.base_hp:.0f}"),
+                ("HP", _fv(hero.base_hp, ".0f")),
                 ("Regen", f"{hero.base_regen:.1f} /s"),
-                ("Move Speed", f"{hero.base_move_speed:.2f}"),
+                ("Move Speed", _fv(hero.base_move_speed)),
                 ("Sprint", f"{hero.base_sprint:.1f}"),
-                ("Stamina", f"{hero.base_stamina}"),
+                ("Stamina", _fv(hero.base_stamina, "d")),
                 ("", ""),
-                ("Dmg Gain / Boon", f"+{hero.damage_gain:.2f}"),
-                ("HP Gain / Boon", f"+{hero.hp_gain:.0f}"),
-                ("Spirit Gain / Boon", f"+{hero.spirit_gain:.1f}"),
+                ("Dmg Gain / Boon", _fv(hero.damage_gain, "+.2f")),
+                ("HP Gain / Boon", _fv(hero.hp_gain, "+.0f")),
+                ("Spirit Gain / Boon", _fv(hero.spirit_gain, "+.1f")),
             ]
 
             for label, val in stats:
@@ -181,25 +193,29 @@ def _on_bullet_changed(sender, app_data) -> None:
         dpg.delete_item("bd_output", children_only=True)
 
     with dpg.group(parent="bd_output"):
+        if result.bullets_per_second == 0 and result.damage_per_bullet == 0:
+            dpg.add_text(f"No gun data available for {hero.name}.", color=(255, 100, 100))
+            return
+
         with dpg.table(header_row=True, borders_innerH=True, borders_outerH=True,
                        borders_innerV=True, borders_outerV=True, resizable=True):
             dpg.add_table_column(label="Metric", width_fixed=True, init_width_or_weight=200)
             dpg.add_table_column(label="Value", width_fixed=True, init_width_or_weight=140)
 
             rows = [
-                ("Damage / Bullet", f"{result.damage_per_bullet:.2f}"),
-                ("Bullets / Sec", f"{result.bullets_per_second:.2f}"),
-                ("Raw DPS", f"{result.raw_dps:.2f}"),
+                ("Damage / Bullet", _fv(result.damage_per_bullet)),
+                ("Bullets / Sec", _fv(result.bullets_per_second)),
+                ("Raw DPS", _fv(result.raw_dps)),
                 ("", ""),
                 ("Total Shred", f"{result.total_shred:.1%}"),
                 ("Final Resist", f"{result.final_resist:.1%}"),
-                ("Final DPS", f"{result.final_dps:.2f}"),
+                ("Final DPS", _fv(result.final_dps)),
                 ("", ""),
-                ("Magazine Size", f"{result.magazine_size}"),
-                ("Damage / Magazine", f"{result.damage_per_magazine:.2f}"),
-                ("Magdump Time", f"{result.magdump_time:.2f}s"),
+                ("Magazine Size", _fv(result.magazine_size, "d")),
+                ("Damage / Magazine", _fv(result.damage_per_magazine)),
+                ("Magdump Time", _fv(result.magdump_time) + ("s" if result.magdump_time > 0 else "")),
                 ("", ""),
-                ("Realistic DPS", f"{realistic_dps:.2f}"),
+                ("Realistic DPS", _fv(realistic_dps)),
             ]
             for label, val in rows:
                 with dpg.table_row():
@@ -373,12 +389,13 @@ def _on_scaling_changed(sender, app_data) -> None:
     if dpg.does_item_exist("sc_growth"):
         dpg.delete_item("sc_growth", children_only=True)
 
+    dps_g = f"{growth['dps_growth']:.1%}" if growth['dps_growth'] else "-"
+    hp_g = f"{growth['hp_growth']:.1%}" if growth['hp_growth'] else "-"
+    agg_g = f"{growth['aggregate_growth']:.1%}" if growth['aggregate_growth'] else "-"
     with dpg.group(parent="sc_growth"):
         dpg.add_text(
             f"Growth (0 -> {max_b} boons):  "
-            f"DPS {growth['dps_growth']:.1%}  |  "
-            f"HP {growth['hp_growth']:.1%}  |  "
-            f"Aggregate {growth['aggregate_growth']:.1%}",
+            f"DPS {dps_g}  |  HP {hp_g}  |  Aggregate {agg_g}",
             color=(180, 180, 180),
         )
 
@@ -465,22 +482,34 @@ def _on_ttk_changed(sender, app_data) -> None:
     if dpg.does_item_exist("ttk_output"):
         dpg.delete_item("ttk_output", children_only=True)
 
+    no_dps = result.effective_dps == 0
+    no_hp = result.target_hp == 0
+
     with dpg.group(parent="ttk_output"):
+        if no_dps:
+            dpg.add_text(f"{atk.name} has no gun DPS data.", color=(255, 100, 100))
+        if no_hp:
+            dpg.add_text(f"{defender.name} has no HP data.", color=(255, 100, 100))
+        if no_dps or no_hp:
+            return
+
         with dpg.table(header_row=True, borders_innerH=True, borders_outerH=True,
                        borders_innerV=True, borders_outerV=True, resizable=True):
             dpg.add_table_column(label="Metric", width_fixed=True, init_width_or_weight=200)
             dpg.add_table_column(label="Value", width_fixed=True, init_width_or_weight=140)
 
+            ideal_str = _fv(result.ttk_seconds) + ("s" if result.ttk_seconds > 0 else "")
+            real_str = _fv(result.realistic_ttk) + ("s" if result.realistic_ttk > 0 else "")
             rows = [
                 ("Target HP", f"{result.target_hp:.0f}"),
-                ("Effective DPS", f"{result.effective_dps:.2f}"),
-                ("Realistic DPS", f"{result.realistic_dps:.2f}"),
+                ("Effective DPS", _fv(result.effective_dps)),
+                ("Realistic DPS", _fv(result.realistic_dps)),
                 ("", ""),
-                ("Ideal TTK", f"{result.ttk_seconds:.2f}s", (100, 255, 100)),
-                ("Realistic TTK", f"{result.realistic_ttk:.2f}s", (100, 200, 255)),
+                ("Ideal TTK", ideal_str, (100, 255, 100)),
+                ("Realistic TTK", real_str, (100, 200, 255)),
                 ("Can One-Mag", "Yes" if result.can_one_mag else "No",
                  (100, 255, 100) if result.can_one_mag else (255, 100, 100)),
-                ("Magazines Needed", f"{result.magazines_needed}"),
+                ("Magazines Needed", _fv(result.magazines_needed, "d")),
             ]
             for item in rows:
                 label, val = item[0], item[1]
@@ -565,12 +594,13 @@ def _on_cmp_changed(sender, app_data) -> None:
             for label, va, vb, ratio in rows:
                 with dpg.table_row():
                     dpg.add_text(label)
-                    dpg.add_text(f"{va:.2f}")
-                    dpg.add_text(f"{vb:.2f}")
-                    t = dpg.add_text(f"{ratio:.2f}")
-                    if ratio > 1.05:
+                    dpg.add_text(_fv(va))
+                    dpg.add_text(_fv(vb))
+                    ratio_str = _fv(ratio)
+                    t = dpg.add_text(ratio_str)
+                    if ratio_str != "-" and ratio > 1.05:
                         dpg.configure_item(t, color=(100, 255, 100))
-                    elif ratio < 0.95:
+                    elif ratio_str != "-" and ratio < 0.95:
                         dpg.configure_item(t, color=(255, 100, 100))
 
     # DPS scaling plot
@@ -629,7 +659,10 @@ def _on_rank_changed(sender, app_data) -> None:
                 with dpg.table_row():
                     dpg.add_text(f"{entry.rank}")
                     dpg.add_text(entry.hero_name)
-                    fmt = f"{entry.value:.1%}" if "growth" in stat else f"{entry.value:.2f}"
+                    if "growth" in stat:
+                        fmt = f"{entry.value:.1%}" if entry.value != 0 else "-"
+                    else:
+                        fmt = _fv(entry.value)
                     t = dpg.add_text(fmt)
                     # Top 3 highlight
                     if entry.rank == 1:

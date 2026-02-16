@@ -7,6 +7,7 @@ only this module.
 
 from __future__ import annotations
 
+import math
 import sys
 
 from ..data import load_heroes, load_shop_tiers
@@ -17,12 +18,43 @@ from ..engine.ttk import TTKCalculator
 from ..models import AbilityConfig, CombatConfig, HeroStats
 
 
+# ─── Formatting helpers ──────────────────────────────────────────
+
+
 def _divider(char: str = "-", width: int = 60) -> str:
     return char * width
 
 
 def _header(title: str, width: int = 60) -> str:
     return f"\n{'=' * width}\n  {title}\n{'=' * width}"
+
+
+def _val(v: float, fmt: str = ".2f", zero_as_na: bool = True) -> str:
+    """Format a numeric value, showing '-' for missing/zero/inf/nan."""
+    if math.isinf(v) or math.isnan(v):
+        return "-"
+    if zero_as_na and v == 0:
+        return "-"
+    return f"{v:{fmt}}"
+
+
+def _pct_val(v: float, zero_as_na: bool = True) -> str:
+    """Format a value as percentage, showing '-' for missing."""
+    if math.isinf(v) or math.isnan(v):
+        return "-"
+    if zero_as_na and v == 0:
+        return "-"
+    return f"{v:.1%}"
+
+
+def _ratio_val(v: float) -> str:
+    """Format a ratio, showing '-' when meaningless."""
+    if v == 0 or math.isinf(v) or math.isnan(v):
+        return "-"
+    return f"{v:.2f}"
+
+
+# ─── Prompts ─────────────────────────────────────────────────────
 
 
 def _prompt_choice(prompt: str, options: list[str]) -> str:
@@ -86,44 +118,56 @@ def _pick_hero(heroes: dict[str, HeroStats], prompt: str = "Select hero") -> Her
 def display_hero_stats(hero: HeroStats) -> None:
     """Print a hero's base stats."""
     print(_header(f"{hero.name} - Base Stats"))
-    print(f"  Bullet Damage:   {hero.base_bullet_damage:.2f} x{hero.pellets} pellets")
-    print(f"  Fire Rate:       {hero.base_fire_rate:.2f} shots/sec")
-    print(f"  Base DPS:        {hero.base_dps:.2f}")
-    print(f"  Magazine:        {hero.base_ammo} rounds")
-    print(f"  DPM:             {hero.base_dpm:.2f}")
-    print(f"  Falloff:         {hero.falloff_range_min:.0f}m - {hero.falloff_range_max:.0f}m")
-    print(f"  HP:              {hero.base_hp:.0f}")
-    print(f"  Regen:           {hero.base_regen:.1f}/s")
-    print(f"  Move Speed:      {hero.base_move_speed:.2f}")
-    print(f"  Sprint Speed:    {hero.base_sprint:.1f}")
-    print(f"  Stamina:         {hero.base_stamina}")
-    print(_divider())
-    print(f"  Per-Boon Scaling:")
-    print(f"    Damage Gain:   +{hero.damage_gain:.2f}/boon")
-    print(f"    HP Gain:       +{hero.hp_gain:.0f}/boon")
-    print(f"    Spirit Gain:   +{hero.spirit_gain:.1f}/boon")
     if hero.hero_labs:
         print(f"  [Hero Labs - stats may be incomplete]")
+
+    has_gun = hero.base_bullet_damage > 0 or hero.base_fire_rate > 0
+    if has_gun:
+        print(f"  Bullet Damage:   {hero.base_bullet_damage:.2f} x{hero.pellets} pellets")
+        print(f"  Fire Rate:       {_val(hero.base_fire_rate)} shots/sec")
+        print(f"  Base DPS:        {_val(hero.base_dps)}")
+        print(f"  Magazine:        {_val(hero.base_ammo, 'd')}")
+        print(f"  DPM:             {_val(hero.base_dpm)}")
+        print(f"  Falloff:         {hero.falloff_range_min:.0f}m - {hero.falloff_range_max:.0f}m")
+    else:
+        print(f"  Gun Stats:       - (no data)")
+
+    print(f"  HP:              {_val(hero.base_hp, '.0f')}")
+    print(f"  Regen:           {_val(hero.base_regen, '.1f', zero_as_na=False)}/s")
+    print(f"  Move Speed:      {_val(hero.base_move_speed)}")
+    print(f"  Sprint Speed:    {_val(hero.base_sprint, '.1f', zero_as_na=False)}")
+    print(f"  Stamina:         {_val(hero.base_stamina, 'd')}")
+    print(_divider())
+    print(f"  Per-Boon Scaling:")
+    print(f"    Damage Gain:   {_val(hero.damage_gain, '+.2f')}/boon")
+    print(f"    HP Gain:       {_val(hero.hp_gain, '+.0f')}/boon")
+    print(f"    Spirit Gain:   {_val(hero.spirit_gain, '+.1f')}/boon")
 
 
 def display_bullet_calc(hero: HeroStats, config: CombatConfig) -> None:
     """Run and display bullet damage calculation."""
     result = DamageCalculator.calculate_bullet(hero, config)
+
     print(_header(f"{hero.name} - Bullet Damage (Boon {config.boons})"))
-    print(f"  Damage/Bullet:   {result.damage_per_bullet:.2f}")
-    print(f"  Bullets/Sec:     {result.bullets_per_second:.2f}")
-    print(f"  Raw DPS:         {result.raw_dps:.2f}")
+
+    if result.bullets_per_second == 0 and result.damage_per_bullet == 0:
+        print(f"  No gun data available for {hero.name}.")
+        return
+
+    print(f"  Damage/Bullet:   {_val(result.damage_per_bullet)}")
+    print(f"  Bullets/Sec:     {_val(result.bullets_per_second)}")
+    print(f"  Raw DPS:         {_val(result.raw_dps)}")
     print(f"  Shred:           {result.total_shred:.1%}")
     print(f"  Enemy Resist:    {config.enemy_bullet_resist:.1%} -> {result.final_resist:.1%}")
-    print(f"  Final DPS:       {result.final_dps:.2f}")
+    print(f"  Final DPS:       {_val(result.final_dps)}")
     print(_divider())
-    print(f"  Magazine:        {result.magazine_size} rounds")
-    print(f"  Damage/Mag:      {result.damage_per_magazine:.2f}")
-    print(f"  Magdump Time:    {result.magdump_time:.2f}s")
+    print(f"  Magazine:        {_val(result.magazine_size, 'd')} rounds")
+    print(f"  Damage/Mag:      {_val(result.damage_per_magazine)}")
+    print(f"  Magdump Time:    {_val(result.magdump_time)}s")
 
     if config.accuracy < 1.0:
         realistic = DamageCalculator.dps_with_accuracy(hero, config)
-        print(f"  Realistic DPS:   {realistic:.2f} ({config.accuracy:.0%} acc, {config.headshot_rate:.0%} HS)")
+        print(f"  Realistic DPS:   {_val(realistic)} ({config.accuracy:.0%} acc, {config.headshot_rate:.0%} HS)")
 
 
 def display_scaling(hero: HeroStats, max_boons: int = 35) -> None:
@@ -132,25 +176,36 @@ def display_scaling(hero: HeroStats, max_boons: int = 35) -> None:
     growth = ScalingCalculator.growth_percentage(hero, max_boons)
 
     print(_header(f"{hero.name} - Scaling (0 to {max_boons} Boons)"))
+
+    has_gun = hero.base_bullet_damage > 0 or hero.base_fire_rate > 0
+    has_hp = hero.base_hp > 0
+
+    if not has_gun and not has_hp:
+        print(f"  No scaling data available for {hero.name}.")
+        return
+
     print(f"  {'Boon':>4}  {'Bullet Dmg':>10}  {'DPS':>10}  {'HP':>8}  {'Spirit':>7}")
     print(f"  {_divider('─', 47)}")
 
     step = max(1, max_boons // 10)
     for snap in curve:
         if snap.boon_level % step == 0 or snap.boon_level == max_boons:
+            dmg_str = f"{snap.bullet_damage:10.2f}" if has_gun else "         -"
+            dps_str = f"{snap.dps:10.2f}" if has_gun and hero.base_fire_rate > 0 else "         -"
+            hp_str = f"{snap.hp:8.0f}" if has_hp else "       -"
             print(
                 f"  {snap.boon_level:4d}"
-                f"  {snap.bullet_damage:10.2f}"
-                f"  {snap.dps:10.2f}"
-                f"  {snap.hp:8.0f}"
+                f"  {dmg_str}"
+                f"  {dps_str}"
+                f"  {hp_str}"
                 f"  {snap.spirit:7.1f}"
             )
 
     print(_divider())
     print(f"  Growth (0 -> {max_boons} boons):")
-    print(f"    DPS:  {growth['dps_growth']:.1%}")
-    print(f"    HP:   {growth['hp_growth']:.1%}")
-    print(f"    Total: {growth['aggregate_growth']:.1%}")
+    print(f"    DPS:  {_pct_val(growth['dps_growth'])}")
+    print(f"    HP:   {_pct_val(growth['hp_growth'])}")
+    print(f"    Total: {_pct_val(growth['aggregate_growth'])}")
 
 
 def display_ttk(
@@ -162,19 +217,28 @@ def display_ttk(
     result = TTKCalculator.calculate(attacker, defender, config)
 
     print(_header(f"TTK: {attacker.name} vs {defender.name}"))
+
+    if result.effective_dps == 0:
+        print(f"  {attacker.name} has no gun DPS data - cannot calculate TTK.")
+        return
+
+    if result.target_hp == 0:
+        print(f"  {defender.name} has no HP data - cannot calculate TTK.")
+        return
+
     print(f"  Attacker ({attacker.name}):")
     print(f"    Boons:         {config.boons}")
-    print(f"    Effective DPS: {result.effective_dps:.2f}")
-    print(f"    Realistic DPS: {result.realistic_dps:.2f}")
-    print(f"    Dmg/Magazine:  {result.damage_per_magazine:.2f}")
+    print(f"    Effective DPS: {_val(result.effective_dps)}")
+    print(f"    Realistic DPS: {_val(result.realistic_dps)}")
+    print(f"    Dmg/Magazine:  {_val(result.damage_per_magazine)}")
     print(f"  Defender ({defender.name}):")
     print(f"    Target HP:     {result.target_hp:.0f}")
     print(f"    Bullet Resist: {config.enemy_bullet_resist:.0%}")
     print(_divider())
-    print(f"  Ideal TTK:       {result.ttk_seconds:.2f}s")
-    print(f"  Realistic TTK:   {result.realistic_ttk:.2f}s")
+    print(f"  Ideal TTK:       {_val(result.ttk_seconds)}s")
+    print(f"  Realistic TTK:   {_val(result.realistic_ttk)}s")
     print(f"  Can One-Mag:     {'Yes' if result.can_one_mag else 'No'}")
-    print(f"  Magazines Needed: {result.magazines_needed}")
+    print(f"  Magazines Needed: {_val(result.magazines_needed, 'd')}")
 
 
 def display_comparison(
@@ -188,9 +252,9 @@ def display_comparison(
     print(_header(f"Comparison: {hero_a.name} vs {hero_b.name} (Boon {boon_level})"))
     print(f"  {'':16} {'':>2}{hero_a.name:>14}  {hero_b.name:>14}  {'Ratio':>8}")
     print(f"  {_divider('─', 56)}")
-    print(f"  {'DPS':16}   {comp.hero_a_dps:14.2f}  {comp.hero_b_dps:14.2f}  {comp.dps_ratio:8.2f}")
-    print(f"  {'HP':16}   {comp.hero_a_hp:14.0f}  {comp.hero_b_hp:14.0f}  {comp.hp_ratio:8.2f}")
-    print(f"  {'DPM':16}   {comp.hero_a_dpm:14.2f}  {comp.hero_b_dpm:14.2f}  {comp.dpm_ratio:8.2f}")
+    print(f"  {'DPS':16}   {_val(comp.hero_a_dps):>14}  {_val(comp.hero_b_dps):>14}  {_ratio_val(comp.dps_ratio):>8}")
+    print(f"  {'HP':16}   {_val(comp.hero_a_hp, '.0f'):>14}  {_val(comp.hero_b_hp, '.0f'):>14}  {_ratio_val(comp.hp_ratio):>8}")
+    print(f"  {'DPM':16}   {_val(comp.hero_a_dpm):>14}  {_val(comp.hero_b_dpm):>14}  {_ratio_val(comp.dpm_ratio):>8}")
 
 
 def display_rankings(
@@ -206,7 +270,11 @@ def display_rankings(
     print(f"  {'Rank':>4}  {'Hero':<16}  {'Value':>12}")
     print(f"  {_divider('─', 36)}")
     for entry in rankings[:top_n]:
-        print(f"  {entry.rank:4d}  {entry.hero_name:<16}  {entry.value:12.2f}")
+        if "growth" in stat:
+            val_str = _pct_val(entry.value)
+        else:
+            val_str = _val(entry.value)
+        print(f"  {entry.rank:4d}  {entry.hero_name:<16}  {val_str:>12}")
 
 
 # ─── Menu / Main Loop ────────────────────────────────────────────

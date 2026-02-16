@@ -35,7 +35,10 @@ class DamageCalculator:
         """Calculate magazine size with ammo bonuses.
 
         ammo_increase is a multiplier: 1.0 = double ammo, 0.5 = +50%.
+        Returns 0 if the hero has no ammo data.
         """
+        if hero.base_ammo <= 0:
+            return 0
         return max(1, math.floor(hero.base_ammo * (1.0 + ammo_increase)))
 
     @staticmethod
@@ -83,7 +86,7 @@ class DamageCalculator:
         # Magazine
         mag_size = cls.effective_magazine(hero, config.ammo_increase)
         dmg_per_mag = dmg_per_bullet * mag_size
-        magdump_time = mag_size / bps if bps > 0 else float("inf")
+        magdump_time = mag_size / bps if bps > 0 and mag_size > 0 else 0.0
 
         # Resist calculation
         t_shred = cls.total_shred(config.shred)

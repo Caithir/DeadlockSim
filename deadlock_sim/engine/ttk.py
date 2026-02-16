@@ -39,7 +39,7 @@ class TTKCalculator:
         target_hp += config.enemy_bonus_hp
 
         # Ideal TTK (100% accuracy, no reloads considered)
-        ideal_ttk = target_hp / bullet.final_dps if bullet.final_dps > 0 else float("inf")
+        ideal_ttk = target_hp / bullet.final_dps if bullet.final_dps > 0 else 0.0
 
         # Realistic DPS with accuracy and headshots
         realistic_dps = DamageCalculator.dps_with_accuracy(attacker, config)
@@ -56,25 +56,22 @@ class TTKCalculator:
         )
         realistic_dmg_per_mag = effective_dmg_per_mag_acc + hs_bonus_per_mag
 
-        can_one_mag = realistic_dmg_per_mag >= target_hp
-        mags_needed = (
-            1
-            if can_one_mag
-            else math.ceil(target_hp / realistic_dmg_per_mag)
-            if realistic_dmg_per_mag > 0
-            else float("inf")
-        )
+        can_one_mag = realistic_dmg_per_mag >= target_hp if realistic_dmg_per_mag > 0 else False
+        if realistic_dmg_per_mag > 0:
+            mags_needed = 1 if can_one_mag else math.ceil(target_hp / realistic_dmg_per_mag)
+        else:
+            mags_needed = 0
 
         # Realistic TTK = time to deal enough damage through mags
         if realistic_dps > 0:
             realistic_ttk = target_hp / realistic_dps
         else:
-            realistic_ttk = float("inf")
+            realistic_ttk = 0.0
 
         return TTKResult(
             ttk_seconds=ideal_ttk,
             realistic_ttk=realistic_ttk,
-            magazines_needed=int(mags_needed) if mags_needed != float("inf") else 999,
+            magazines_needed=mags_needed,
             can_one_mag=can_one_mag,
             effective_dps=bullet.final_dps,
             realistic_dps=realistic_dps,

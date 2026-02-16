@@ -66,9 +66,9 @@ class ComparisonEngine:
             hero_b_dps=snap_b.dps,
             hero_b_hp=snap_b.hp,
             hero_b_dpm=snap_b.dpm,
-            dps_ratio=snap_a.dps / snap_b.dps if snap_b.dps else float("inf"),
-            hp_ratio=snap_a.hp / snap_b.hp if snap_b.hp else float("inf"),
-            dpm_ratio=snap_a.dpm / snap_b.dpm if snap_b.dpm else float("inf"),
+            dps_ratio=snap_a.dps / snap_b.dps if snap_b.dps else 0.0,
+            hp_ratio=snap_a.hp / snap_b.hp if snap_b.hp else 0.0,
+            dpm_ratio=snap_a.dpm / snap_b.dpm if snap_b.dpm else 0.0,
         )
 
     @classmethod
