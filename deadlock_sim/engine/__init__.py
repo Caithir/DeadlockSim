@@ -1,13 +1,16 @@
 """Core simulation engine - calculations with no UI dependencies."""
 
-from .damage import DamageCalculator
-from .ttk import TTKCalculator
-from .scaling import ScalingCalculator
+from .builds import BuildEngine, BuildOptimizer
 from .comparison import ComparisonEngine
+from .damage import DamageCalculator
+from .scaling import ScalingCalculator
+from .ttk import TTKCalculator
 
 __all__ = [
-    "DamageCalculator",
-    "TTKCalculator",
-    "ScalingCalculator",
+    "BuildEngine",
+    "BuildOptimizer",
     "ComparisonEngine",
+    "DamageCalculator",
+    "ScalingCalculator",
+    "TTKCalculator",
 ]

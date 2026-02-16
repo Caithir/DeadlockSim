@@ -31,15 +31,20 @@ class DamageCalculator:
         return hero.base_fire_rate * (1.0 + fire_rate_bonus)
 
     @staticmethod
-    def effective_magazine(hero: HeroStats, ammo_increase: float = 0.0) -> int:
+    def effective_magazine(
+        hero: HeroStats,
+        ammo_increase: float = 0.0,
+        ammo_flat: int = 0,
+    ) -> int:
         """Calculate magazine size with ammo bonuses.
 
         ammo_increase is a multiplier: 1.0 = double ammo, 0.5 = +50%.
+        ammo_flat is a flat bonus added after the percentage increase.
         Returns 0 if the hero has no ammo data.
         """
         if hero.base_ammo <= 0:
             return 0
-        return max(1, math.floor(hero.base_ammo * (1.0 + ammo_increase)))
+        return max(1, math.floor(hero.base_ammo * (1.0 + ammo_increase)) + ammo_flat)
 
     @staticmethod
     def total_shred(shred_sources: list[float]) -> float:
@@ -84,7 +89,7 @@ class DamageCalculator:
         raw_dps = dmg_per_bullet * bps
 
         # Magazine
-        mag_size = cls.effective_magazine(hero, config.ammo_increase)
+        mag_size = cls.effective_magazine(hero, config.ammo_increase, config.ammo_flat)
         dmg_per_mag = dmg_per_bullet * mag_size
         magdump_time = mag_size / bps if bps > 0 and mag_size > 0 else 0.0
 

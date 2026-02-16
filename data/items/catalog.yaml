@@ -1,0 +1,1217 @@
+# Deadlock Item Catalog
+# Auto-generated from deadlock-wiki/deadlock-data item-data.json
+#
+# Stat keys used by the build engine (all percentages stored as decimals):
+#   weapon_damage_pct  - % weapon damage bonus
+#   fire_rate_pct      - % fire rate bonus
+#   ammo_flat          - flat bonus ammo
+#   ammo_pct           - % ammo increase
+#   bullet_resist_pct  - % bullet resist
+#   spirit_resist_pct  - % spirit resist
+#   bonus_hp           - flat bonus HP
+#   spirit_power       - flat spirit power
+#   bullet_lifesteal   - % bullet lifesteal
+#   hp_regen           - HP regen per second
+#   move_speed         - flat move speed bonus
+#   sprint_speed       - flat sprint speed bonus
+#   bullet_shield      - bullet damage shield HP
+#   headshot_bonus     - bonus headshot damage (flat)
+#   bullet_resist_shred - % bullet resist shred applied to target
+#   spirit_resist_shred - % spirit resist shred applied to target
+#   cooldown_reduction  - % cooldown reduction
+#   spirit_amp_pct      - % spirit damage amp
+
+items:
+
+  # ============================================================
+  # WEAPON ITEMS
+  # ============================================================
+
+  # -- Weapon Tier 1 (800 souls) --
+
+  - name: "Close Quarters"
+    category: weapon
+    tier: 1
+    cost: 800
+    stats:
+      weapon_damage_pct: 0.2
+    condition: "Within 15m"
+
+  - name: "Extended Magazine"
+    category: weapon
+    tier: 1
+    cost: 800
+    stats:
+      ammo_pct: 0.3
+      weapon_damage_pct: 0.06
+
+  - name: "Headshot Booster"
+    category: weapon
+    tier: 1
+    cost: 800
+    stats:
+      bonus_hp: 30
+      headshot_bonus: 45
+
+  - name: "High-Velocity Rounds"
+    category: weapon
+    tier: 1
+    cost: 800
+    stats:
+      fire_rate_pct: 0.05
+
+  - name: "Monster Rounds"
+    category: weapon
+    tier: 1
+    cost: 800
+    stats:
+      weapon_damage_pct: 0.25
+    condition: "vs NPCs only"
+
+  - name: "Rapid Rounds"
+    category: weapon
+    tier: 1
+    cost: 800
+    stats:
+      fire_rate_pct: 0.09
+
+  - name: "Restorative Shot"
+    category: weapon
+    tier: 1
+    cost: 800
+    stats:
+      weapon_damage_pct: 0.06
+
+  # -- Weapon Tier 2 (1600 souls) --
+
+  - name: "Active Reload"
+    category: weapon
+    tier: 2
+    cost: 1600
+    stats:
+      ammo_pct: 0.2
+      bullet_lifesteal: 0.18
+      fire_rate_pct: 0.22
+      move_speed: 0.75
+
+  - name: "Backstabber"
+    category: weapon
+    tier: 2
+    cost: 1600
+    stats:
+      bonus_hp: 50
+      bullet_resist_shred: -0.06
+      move_speed: 1.5
+
+  - name: "Fleetfoot"
+    category: weapon
+    tier: 2
+    cost: 1600
+    stats:
+      bullet_resist_pct: 0.06
+
+  - name: "Intensifying Magazine"
+    category: weapon
+    tier: 2
+    cost: 1600
+    stats:
+      ammo_pct: 0.2
+
+  - name: "Kinetic Dash"
+    category: weapon
+    tier: 2
+    cost: 1600
+    stats:
+      ammo_flat: 6
+      fire_rate_pct: 0.25
+
+  - name: "Long Range"
+    category: weapon
+    tier: 2
+    cost: 1600
+    stats:
+      sprint_speed: 0.75
+      weapon_damage_pct: 0.4
+    condition: "Beyond 15m"
+
+  - name: "Melee Charge"
+    category: weapon
+    tier: 2
+    cost: 1600
+    stats:
+      bullet_resist_pct: 0.06
+
+  - name: "Mystic Shot"
+    category: weapon
+    tier: 2
+    cost: 1600
+    stats:
+      spirit_power: 7
+
+  - name: "Opening Rounds"
+    category: weapon
+    tier: 2
+    cost: 1600
+    stats:
+      spirit_power: 8
+
+  - name: "Recharging Rush"
+    category: weapon
+    tier: 2
+    cost: 1600
+    stats:
+      ammo_pct: 0.2
+      weapon_damage_pct: 0.1
+
+  - name: "Slowing Bullets"
+    category: weapon
+    tier: 2
+    cost: 1600
+    stats:
+      weapon_damage_pct: 0.15
+
+  - name: "Spirit Shredder Bullets"
+    category: weapon
+    tier: 2
+    cost: 1600
+    stats: {}
+
+  - name: "Split Shot"
+    category: weapon
+    tier: 2
+    cost: 1600
+    stats: {}
+
+  - name: "Swift Striker"
+    category: weapon
+    tier: 2
+    cost: 1600
+    stats:
+      fire_rate_pct: 0.18
+      sprint_speed: 0.75
+
+  - name: "Titanic Magazine"
+    category: weapon
+    tier: 2
+    cost: 1600
+    stats:
+      ammo_pct: 0.9
+      weapon_damage_pct: 0.12
+
+  - name: "Weakening Headshot"
+    category: weapon
+    tier: 2
+    cost: 1600
+    stats:
+      bonus_hp: 50
+      bullet_resist_shred: -0.13
+
+  # -- Weapon Tier 3 (3200 souls) --
+
+  - name: "Alchemical Fire"
+    category: weapon
+    tier: 3
+    cost: 3200
+    stats:
+      bullet_resist_shred: 0.07
+      spirit_power: 8
+
+  - name: "Ballistic Enchantment"
+    category: weapon
+    tier: 3
+    cost: 3200
+    stats: {}
+
+  - name: "Berserker"
+    category: weapon
+    tier: 3
+    cost: 3200
+    stats:
+      bullet_resist_pct: 0.08
+
+  - name: "Blood Tribute"
+    category: weapon
+    tier: 3
+    cost: 3200
+    stats:
+      fire_rate_pct: 0.35
+      move_speed: 2.0
+      spirit_resist_pct: 0.1
+
+  - name: "Burst Fire"
+    category: weapon
+    tier: 3
+    cost: 3200
+    stats:
+      fire_rate_pct: 0.1
+      move_speed: 1.25
+
+  - name: "Cultist Sacrifice"
+    category: weapon
+    tier: 3
+    cost: 3200
+    stats:
+      bonus_hp: 50
+      weapon_damage_pct: 0.38
+    condition: "vs NPCs only"
+
+  - name: "Escalating Resilience"
+    category: weapon
+    tier: 3
+    cost: 3200
+    stats:
+      ammo_pct: 0.3
+      bonus_hp: 75
+      weapon_damage_pct: 0.15
+
+  - name: "Express Shot"
+    category: weapon
+    tier: 3
+    cost: 3200
+    stats:
+      fire_rate_pct: 0.05
+
+  - name: "Headhunter"
+    category: weapon
+    tier: 3
+    cost: 3200
+    stats:
+      bonus_hp: 50
+      headshot_bonus: 75
+      move_speed: 1.75
+      weapon_damage_pct: 0.05
+
+  - name: "Heroic Aura"
+    category: weapon
+    tier: 3
+    cost: 3200
+    stats:
+      bullet_resist_pct: 0.15
+      fire_rate_pct: 0.26
+      sprint_speed: 1.5
+
+  - name: "Hollow Point"
+    category: weapon
+    tier: 3
+    cost: 3200
+    stats:
+      bonus_hp: 125
+      bullet_resist_shred: 0.09
+      weapon_damage_pct: 0.35
+
+  - name: "Hunter's Aura"
+    category: weapon
+    tier: 3
+    cost: 3200
+    stats:
+      bonus_hp: 100
+      bullet_resist_shred: 0.08
+      sprint_speed: 0.75
+
+  - name: "Point Blank"
+    category: weapon
+    tier: 3
+    cost: 3200
+    stats:
+      bonus_hp: 75
+      weapon_damage_pct: 0.5
+    condition: "Within 15m"
+
+  - name: "Sharpshooter"
+    category: weapon
+    tier: 3
+    cost: 3200
+    stats:
+      sprint_speed: 1.0
+      weapon_damage_pct: 0.7
+    condition: "Beyond 15m"
+
+  - name: "Spirit Rend"
+    category: weapon
+    tier: 3
+    cost: 3200
+    stats:
+      bonus_hp: 75
+      spirit_resist_shred: -0.07
+
+  - name: "Tesla Bullets"
+    category: weapon
+    tier: 3
+    cost: 3200
+    stats: {}
+
+  - name: "Toxic Bullets"
+    category: weapon
+    tier: 3
+    cost: 3200
+    stats: {}
+
+  - name: "Weighted Shots"
+    category: weapon
+    tier: 3
+    cost: 3200
+    stats:
+      spirit_resist_pct: 0.16
+      weapon_damage_pct: 0.35
+
+  # -- Weapon Tier 4 (6400 souls) --
+
+  - name: "Armor Piercing Rounds"
+    category: weapon
+    tier: 4
+    cost: 6400
+    stats: {}
+
+  - name: "Capacitor"
+    category: weapon
+    tier: 4
+    cost: 6400
+    stats:
+      fire_rate_pct: 0.05
+
+  - name: "Crippling Headshot"
+    category: weapon
+    tier: 4
+    cost: 6400
+    stats:
+      bonus_hp: 125
+      bullet_resist_shred: -0.16
+      spirit_resist_shred: -0.16
+
+  - name: "Crushing Fists"
+    category: weapon
+    tier: 4
+    cost: 6400
+    stats:
+      bullet_resist_pct: 0.12
+      bullet_resist_shred: -0.04
+
+  - name: "Frenzy"
+    category: weapon
+    tier: 4
+    cost: 6400
+    stats:
+      fire_rate_pct: 0.08
+      move_speed: 0.75
+      spirit_resist_pct: 0.1
+
+  - name: "Glass Cannon"
+    category: weapon
+    tier: 4
+    cost: 6400
+    stats:
+      weapon_damage_pct: 0.8
+
+  - name: "Lucky Shot"
+    category: weapon
+    tier: 4
+    cost: 6400
+    stats:
+      ammo_pct: 0.3
+
+  - name: "Ricochet"
+    category: weapon
+    tier: 4
+    cost: 6400
+    stats:
+      fire_rate_pct: 0.18
+
+  - name: "Shadow Weave"
+    category: weapon
+    tier: 4
+    cost: 6400
+    stats:
+      sprint_speed: 1.5
+
+  - name: "Silencer"
+    category: weapon
+    tier: 4
+    cost: 6400
+    stats:
+      spirit_resist_pct: 0.15
+
+  - name: "Spellslinger"
+    category: weapon
+    tier: 4
+    cost: 6400
+    stats:
+      cooldown_reduction: 0.06
+      fire_rate_pct: 0.11
+
+  - name: "Spiritual Overflow"
+    category: weapon
+    tier: 4
+    cost: 6400
+    stats:
+      cooldown_reduction: 0.12
+      fire_rate_pct: 0.32
+
+  # ============================================================
+  # VITALITY ITEMS
+  # ============================================================
+
+  # -- Vitality Tier 1 (800 souls) --
+
+  - name: "Extra Health"
+    category: vitality
+    tier: 1
+    cost: 800
+    stats:
+      bonus_hp: 185
+
+  - name: "Extra Regen"
+    category: vitality
+    tier: 1
+    cost: 800
+    stats:
+      hp_regen: 3
+
+  - name: "Extra Stamina"
+    category: vitality
+    tier: 1
+    cost: 800
+    stats: {}
+
+  - name: "Healing Rite"
+    category: vitality
+    tier: 1
+    cost: 800
+    stats:
+      sprint_speed: 2.0
+
+  - name: "Melee Lifesteal"
+    category: vitality
+    tier: 1
+    cost: 800
+    stats: {}
+
+  - name: "Rebuttal"
+    category: vitality
+    tier: 1
+    cost: 800
+    stats:
+      bonus_hp: 75
+
+  - name: "Sprint Boots"
+    category: vitality
+    tier: 1
+    cost: 800
+    stats:
+      sprint_speed: 2.0
+
+  # -- Vitality Tier 2 (1600 souls) --
+
+  - name: "Battle Vest"
+    category: vitality
+    tier: 2
+    cost: 1600
+    stats:
+      bullet_resist_pct: 0.18
+      fire_rate_pct: 0.07
+      weapon_damage_pct: 0.15
+
+  - name: "Bullet Lifesteal"
+    category: vitality
+    tier: 2
+    cost: 1600
+    stats:
+      bonus_hp: 90
+      bullet_lifesteal: 0.16
+
+  - name: "Debuff Reducer"
+    category: vitality
+    tier: 2
+    cost: 1600
+    stats: {}
+
+  - name: "Enchanter's Emblem"
+    category: vitality
+    tier: 2
+    cost: 1600
+    stats:
+      cooldown_reduction: 0.05
+      spirit_power: 15
+      spirit_resist_pct: 0.15
+
+  - name: "Enduring Speed"
+    category: vitality
+    tier: 2
+    cost: 1600
+    stats:
+      move_speed: 2.0
+
+  - name: "Guardian Ward"
+    category: vitality
+    tier: 2
+    cost: 1600
+    stats:
+      move_speed: 2.75
+
+  - name: "Healbane"
+    category: vitality
+    tier: 2
+    cost: 1600
+    stats:
+      spirit_power: 7
+
+  - name: "Healing Booster"
+    category: vitality
+    tier: 2
+    cost: 1600
+    stats:
+      hp_regen: 3
+
+  - name: "Reactive Barrier"
+    category: vitality
+    tier: 2
+    cost: 1600
+    stats:
+      spirit_resist_pct: 0.06
+
+  - name: "Restorative Locket"
+    category: vitality
+    tier: 2
+    cost: 1600
+    stats:
+      spirit_resist_pct: 0.08
+
+  - name: "Return Fire"
+    category: vitality
+    tier: 2
+    cost: 1600
+    stats:
+      bullet_resist_pct: 0.08
+
+  - name: "Spirit Lifesteal"
+    category: vitality
+    tier: 2
+    cost: 1600
+    stats:
+      bonus_hp: 70
+      spirit_power: 6
+
+  - name: "Spirit Shielding"
+    category: vitality
+    tier: 2
+    cost: 1600
+    stats:
+      bullet_shield: 300.0
+      move_speed: 1.5
+
+  - name: "Weapon Shielding"
+    category: vitality
+    tier: 2
+    cost: 1600
+    stats:
+      bullet_shield: 300.0
+      move_speed: 1.5
+
+  # -- Vitality Tier 3 (3200 souls) --
+
+  - name: "Bullet Resilience"
+    category: vitality
+    tier: 3
+    cost: 3200
+    stats:
+      bullet_resist_pct: 0.3
+
+  - name: "Counterspell"
+    category: vitality
+    tier: 3
+    cost: 3200
+    stats:
+      bonus_hp: 100
+      move_speed: 1.75
+      spirit_power: 20
+
+  - name: "Dispel Magic"
+    category: vitality
+    tier: 3
+    cost: 3200
+    stats:
+      spirit_resist_pct: 0.16
+
+  - name: "Fortitude"
+    category: vitality
+    tier: 3
+    cost: 3200
+    stats:
+      bonus_hp: 375
+      move_speed: 1.25
+
+  - name: "Fury Trance"
+    category: vitality
+    tier: 3
+    cost: 3200
+    stats:
+      bonus_hp: 100
+      bullet_lifesteal: 0.18
+      spirit_resist_pct: 0.4
+
+  - name: "Healing Nova"
+    category: vitality
+    tier: 3
+    cost: 3200
+    stats:
+      spirit_power: 8
+
+  - name: "Lifestrike"
+    category: vitality
+    tier: 3
+    cost: 3200
+    stats:
+      bonus_hp: 125
+
+  - name: "Majestic Leap"
+    category: vitality
+    tier: 3
+    cost: 3200
+    stats:
+      bullet_shield: 140.0
+
+  - name: "Metal Skin"
+    category: vitality
+    tier: 3
+    cost: 3200
+    stats:
+      bullet_resist_pct: 0.15
+
+  - name: "Rescue Beam"
+    category: vitality
+    tier: 3
+    cost: 3200
+    stats:
+      sprint_speed: 0.75
+
+  - name: "Spirit Resilience"
+    category: vitality
+    tier: 3
+    cost: 3200
+    stats:
+      spirit_resist_pct: 0.3
+
+  - name: "Stamina Mastery"
+    category: vitality
+    tier: 3
+    cost: 3200
+    stats: {}
+
+  - name: "Trophy Collector"
+    category: vitality
+    tier: 3
+    cost: 3200
+    stats:
+      sprint_speed: 2.0
+
+  - name: "Veil Walker"
+    category: vitality
+    tier: 3
+    cost: 3200
+    stats:
+      bonus_hp: 175
+      move_speed: 3.5
+      spirit_power: 10
+
+  - name: "Warp Stone"
+    category: vitality
+    tier: 3
+    cost: 3200
+    stats:
+      bullet_resist_pct: 0.3
+
+  # -- Vitality Tier 4 (6400 souls) --
+
+  - name: "Cheat Death"
+    category: vitality
+    tier: 4
+    cost: 6400
+    stats:
+      bonus_hp: 200
+      bullet_resist_pct: 0.15
+
+  - name: "Colossus"
+    category: vitality
+    tier: 4
+    cost: 6400
+    stats:
+      bonus_hp: 300
+      weapon_damage_pct: 0.15
+
+  - name: "Divine Barrier"
+    category: vitality
+    tier: 4
+    cost: 6400
+    stats:
+      bullet_shield: 600.0
+      move_speed: 2.75
+
+  - name: "Diviner's Kevlar"
+    category: vitality
+    tier: 4
+    cost: 6400
+    stats:
+      bullet_shield: 1000.0
+      spirit_power: 35
+
+  - name: "Healing Tempo"
+    category: vitality
+    tier: 4
+    cost: 6400
+    stats:
+      fire_rate_pct: 0.35
+      hp_regen: 6
+      move_speed: 1.25
+      spirit_resist_pct: 0.1
+
+  - name: "Infuser"
+    category: vitality
+    tier: 4
+    cost: 6400
+    stats:
+      bonus_hp: 100
+      spirit_resist_pct: 0.1
+
+  - name: "Inhibitor"
+    category: vitality
+    tier: 4
+    cost: 6400
+    stats:
+      bonus_hp: 150
+      weapon_damage_pct: 0.22
+
+  - name: "Juggernaut"
+    category: vitality
+    tier: 4
+    cost: 6400
+    stats:
+      hp_regen: 8
+      move_speed: 2.0
+
+  - name: "Leech"
+    category: vitality
+    tier: 4
+    cost: 6400
+    stats:
+      bonus_hp: 120
+      bullet_lifesteal: 0.3
+      spirit_power: 12
+      weapon_damage_pct: 0.12
+
+  - name: "Phantom Strike"
+    category: vitality
+    tier: 4
+    cost: 6400
+    stats:
+      spirit_power: 8
+      weapon_damage_pct: 0.15
+
+  - name: "Plated Armor"
+    category: vitality
+    tier: 4
+    cost: 6400
+    stats:
+      bonus_hp: 100
+
+  - name: "Siphon Bullets"
+    category: vitality
+    tier: 4
+    cost: 6400
+    stats:
+      bullet_resist_pct: 0.1
+      weapon_damage_pct: 0.15
+
+  - name: "Spellbreaker"
+    category: vitality
+    tier: 4
+    cost: 6400
+    stats:
+      spirit_resist_pct: 0.18
+
+  - name: "Unstoppable"
+    category: vitality
+    tier: 4
+    cost: 6400
+    stats:
+      bonus_hp: 125
+
+  - name: "Vampiric Burst"
+    category: vitality
+    tier: 4
+    cost: 6400
+    stats:
+      bonus_hp: 100
+      bullet_lifesteal: 0.16
+      bullet_resist_pct: 0.1
+
+  - name: "Witchmail"
+    category: vitality
+    tier: 4
+    cost: 6400
+    stats:
+      cooldown_reduction: 0.07
+      spirit_power: 14
+      spirit_resist_pct: 0.2
+
+  # ============================================================
+  # SPIRIT ITEMS
+  # ============================================================
+
+  # -- Spirit Tier 1 (800 souls) --
+
+  - name: "Extra Charge"
+    category: spirit
+    tier: 1
+    cost: 800
+    stats: {}
+
+  - name: "Extra Spirit"
+    category: spirit
+    tier: 1
+    cost: 800
+    stats:
+      spirit_power: 10
+
+  - name: "Mystic Burst"
+    category: spirit
+    tier: 1
+    cost: 800
+    stats: {}
+
+  - name: "Mystic Expansion"
+    category: spirit
+    tier: 1
+    cost: 800
+    stats: {}
+
+  - name: "Mystic Regeneration"
+    category: spirit
+    tier: 1
+    cost: 800
+    stats:
+      bonus_hp: 40
+
+  - name: "Rusted Barrel"
+    category: spirit
+    tier: 1
+    cost: 800
+    stats:
+      bonus_hp: 50
+      bullet_resist_shred: 0.08
+      sprint_speed: 0.5
+
+  - name: "Spirit Strike"
+    category: spirit
+    tier: 1
+    cost: 800
+    stats: {}
+
+  # -- Spirit Tier 2 (1600 souls) --
+
+  - name: "Arcane Surge"
+    category: spirit
+    tier: 2
+    cost: 1600
+    stats:
+      spirit_power: 15
+
+  - name: "Bullet Resist Shredder"
+    category: spirit
+    tier: 2
+    cost: 1600
+    stats:
+      bonus_hp: 65
+      bullet_resist_pct: 0.08
+      bullet_resist_shred: 0.1
+
+  - name: "Cold Front"
+    category: spirit
+    tier: 2
+    cost: 1600
+    stats:
+      spirit_resist_pct: 0.06
+
+  - name: "Compress Cooldown"
+    category: spirit
+    tier: 2
+    cost: 1600
+    stats:
+      cooldown_reduction: 0.18
+
+  - name: "Duration Extender"
+    category: spirit
+    tier: 2
+    cost: 1600
+    stats: {}
+
+  - name: "Improved Spirit"
+    category: spirit
+    tier: 2
+    cost: 1600
+    stats:
+      bonus_hp: 75
+      spirit_power: 18
+      sprint_speed: 1.0
+
+  - name: "Mystic Slow"
+    category: spirit
+    tier: 2
+    cost: 1600
+    stats:
+      bonus_hp: 30
+      sprint_speed: 0.75
+
+  - name: "Mystic Vulnerability"
+    category: spirit
+    tier: 2
+    cost: 1600
+    stats:
+      spirit_resist_pct: 0.08
+
+  - name: "Quicksilver Reload"
+    category: spirit
+    tier: 2
+    cost: 1600
+    stats:
+      fire_rate_pct: 0.1
+
+  - name: "Slowing Hex"
+    category: spirit
+    tier: 2
+    cost: 1600
+    stats:
+      sprint_speed: 0.5
+
+  - name: "Spirit Sap"
+    category: spirit
+    tier: 2
+    cost: 1600
+    stats:
+      bonus_hp: 50
+      spirit_resist_shred: -0.09
+
+  - name: "Suppressor"
+    category: spirit
+    tier: 2
+    cost: 1600
+    stats:
+      bonus_hp: 50
+      spirit_power: 6
+
+  # -- Spirit Tier 3 (3200 souls) --
+
+  - name: "Decay"
+    category: spirit
+    tier: 3
+    cost: 3200
+    stats:
+      bonus_hp: 65
+      spirit_power: 8
+
+  - name: "Disarming Hex"
+    category: spirit
+    tier: 3
+    cost: 3200
+    stats:
+      bonus_hp: 75
+      bullet_resist_shred: 0.13
+      sprint_speed: 0.75
+
+  - name: "Greater Expansion"
+    category: spirit
+    tier: 3
+    cost: 3200
+    stats:
+      spirit_resist_pct: 0.1
+
+  - name: "Knockdown"
+    category: spirit
+    tier: 3
+    cost: 3200
+    stats:
+      bonus_hp: 75
+
+  - name: "Radiant Regeneration"
+    category: spirit
+    tier: 3
+    cost: 3200
+    stats:
+      bonus_hp: 65
+      move_speed: 1.75
+
+  - name: "Rapid Recharge"
+    category: spirit
+    tier: 3
+    cost: 3200
+    stats: {}
+
+  - name: "Silence Wave"
+    category: spirit
+    tier: 3
+    cost: 3200
+    stats:
+      bonus_hp: 50
+
+  - name: "Spirit Snatch"
+    category: spirit
+    tier: 3
+    cost: 3200
+    stats:
+      bonus_hp: 75
+
+  - name: "Superior Cooldown"
+    category: spirit
+    tier: 3
+    cost: 3200
+    stats:
+      cooldown_reduction: 0.2
+
+  - name: "Superior Duration"
+    category: spirit
+    tier: 3
+    cost: 3200
+    stats:
+      bullet_resist_pct: 0.08
+
+  - name: "Surge of Power"
+    category: spirit
+    tier: 3
+    cost: 3200
+    stats:
+      move_speed: 1.75
+
+  - name: "Tankbuster"
+    category: spirit
+    tier: 3
+    cost: 3200
+    stats:
+      bonus_hp: 50
+
+  - name: "Torment Pulse"
+    category: spirit
+    tier: 3
+    cost: 3200
+    stats:
+      bonus_hp: 100
+
+  # -- Spirit Tier 4 (6400 souls) --
+
+  - name: "Arctic Blast"
+    category: spirit
+    tier: 4
+    cost: 6400
+    stats:
+      spirit_resist_pct: 0.1
+
+  - name: "Boundless Spirit"
+    category: spirit
+    tier: 4
+    cost: 6400
+    stats:
+      bonus_hp: 75
+      spirit_power: 35
+
+  - name: "Cursed Relic"
+    category: spirit
+    tier: 4
+    cost: 6400
+    stats: {}
+
+  - name: "Echo Shard"
+    category: spirit
+    tier: 4
+    cost: 6400
+    stats:
+      bullet_resist_pct: 0.05
+      fire_rate_pct: 0.05
+      spirit_resist_pct: 0.05
+
+  - name: "Escalating Exposure"
+    category: spirit
+    tier: 4
+    cost: 6400
+    stats:
+      spirit_resist_pct: 0.17
+
+  - name: "Ethereal Shift"
+    category: spirit
+    tier: 4
+    cost: 6400
+    stats:
+      move_speed: 3.0
+      spirit_resist_pct: 0.3
+
+  - name: "Focus Lens"
+    category: spirit
+    tier: 4
+    cost: 6400
+    stats:
+      fire_rate_pct: 0.1
+      spirit_resist_shred: -0.09
+
+  - name: "Lightning Scroll"
+    category: spirit
+    tier: 4
+    cost: 6400
+    stats:
+      bonus_hp: 50
+      sprint_speed: 0.75
+
+  - name: "Magic Carpet"
+    category: spirit
+    tier: 4
+    cost: 6400
+    stats:
+      bonus_hp: 75
+      spirit_power: 14
+
+  - name: "Mercurial Magnum"
+    category: spirit
+    tier: 4
+    cost: 6400
+    stats:
+      ammo_pct: 0.2
+      fire_rate_pct: 0.22
+      spirit_power: 7
+
+  - name: "Mystic Reverb"
+    category: spirit
+    tier: 4
+    cost: 6400
+    stats: {}
+
+  - name: "Refresher"
+    category: spirit
+    tier: 4
+    cost: 6400
+    stats:
+      bullet_resist_pct: 0.15
+      spirit_resist_pct: 0.14
+
+  - name: "Scourge"
+    category: spirit
+    tier: 4
+    cost: 6400
+    stats:
+      bonus_hp: 100
+      cooldown_reduction: 0.04
+      spirit_resist_pct: 0.4
+
+  - name: "Spirit Burn"
+    category: spirit
+    tier: 4
+    cost: 6400
+    stats: {}
+
+  - name: "Transcendent Cooldown"
+    category: spirit
+    tier: 4
+    cost: 6400
+    stats:
+      cooldown_reduction: 0.25
+
+  - name: "Vortex Web"
+    category: spirit
+    tier: 4
+    cost: 6400
+    stats:
+      sprint_speed: 0.75

@@ -11,17 +11,21 @@ import math
 
 import dearpygui.dearpygui as dpg
 
-from ..data import load_heroes, load_shop_tiers
+from ..data import load_heroes, load_items, load_shop_tiers
+from ..engine.builds import BuildEngine, BuildOptimizer
 from ..engine.comparison import ComparisonEngine
 from ..engine.damage import DamageCalculator
 from ..engine.scaling import ScalingCalculator
 from ..engine.ttk import TTKCalculator
-from ..models import AbilityConfig, CombatConfig, HeroStats
+from ..models import AbilityConfig, Build, CombatConfig, HeroStats, Item
 
 # ── Global state ──────────────────────────────────────────────────
 
 _heroes: dict[str, HeroStats] = {}
 _hero_names: list[str] = []
+_items: dict[str, Item] = {}
+_item_names: list[str] = []
+_build_items: list[Item] = []
 
 # ── Helpers ───────────────────────────────────────────────────────
 
@@ -673,21 +677,339 @@ def _on_rank_changed(sender, app_data) -> None:
                         dpg.configure_item(t, color=(205, 127, 50))
 
 
+# ── Tab: Build Evaluator ────────────────────────────────────────
+
+
+def _build_eval_tab(parent: int | str) -> None:
+    with dpg.group(parent=parent, horizontal=True):
+        # Left: inputs
+        with dpg.child_window(width=380, height=-1):
+            dpg.add_text("Hero", color=(255, 200, 50))
+            dpg.add_combo(
+                _hero_names, label="Hero", tag="bld_hero",
+                default_value=_hero_names[0] if _hero_names else "",
+                callback=_on_build_changed, width=200,
+            )
+            with dpg.group(horizontal=True):
+                dpg.add_input_int(label="Boons", tag="bld_boons", default_value=0,
+                                  min_value=0, max_value=50, callback=_on_build_changed, width=100)
+                dpg.add_input_float(label="Accuracy %", tag="bld_acc", default_value=50,
+                                    min_value=0, max_value=100, callback=_on_build_changed, width=100)
+
+            dpg.add_separator()
+            dpg.add_text("Add Item", color=(255, 200, 50))
+            _cat_filter = ["All", "Weapon", "Vitality", "Spirit"]
+            dpg.add_combo(
+                _cat_filter, label="Category", tag="bld_cat_filter",
+                default_value="All", callback=_on_item_filter_changed, width=120,
+            )
+            dpg.add_input_text(label="Search", tag="bld_search",
+                               callback=_on_item_filter_changed, width=180)
+            with dpg.child_window(height=250, tag="bld_item_list"):
+                pass
+
+            dpg.add_separator()
+            dpg.add_text("Current Build", color=(100, 255, 100))
+            with dpg.child_window(height=180, tag="bld_selected"):
+                pass
+            dpg.add_button(label="Clear Build", callback=_on_clear_build)
+
+        # Right: results
+        with dpg.child_window(width=-1, height=-1):
+            dpg.add_text("Build Results", color=(100, 200, 255))
+            dpg.add_separator()
+            with dpg.group(tag="bld_output"):
+                pass
+
+    _on_item_filter_changed(None, None)
+
+
+def _on_item_filter_changed(sender, app_data) -> None:
+    """Update the item list based on category filter and search."""
+    cat = dpg.get_value("bld_cat_filter").lower()
+    search = dpg.get_value("bld_search").lower().strip()
+
+    filtered = []
+    for item in _items.values():
+        if cat != "all" and item.category != cat:
+            continue
+        if search and search not in item.name.lower():
+            continue
+        filtered.append(item)
+
+    filtered.sort(key=lambda x: (x.tier, x.cost, x.name))
+
+    if dpg.does_item_exist("bld_item_list"):
+        dpg.delete_item("bld_item_list", children_only=True)
+
+    with dpg.group(parent="bld_item_list"):
+        for item in filtered:
+            cond = f"  [{item.condition}]" if item.condition else ""
+            label = f"T{item.tier} {item.name} ({item.cost}){cond}"
+            dpg.add_button(
+                label=label,
+                callback=_on_add_item,
+                user_data=item.name,
+                width=-1,
+            )
+
+
+def _on_add_item(sender, app_data, user_data) -> None:
+    """Add an item to the build."""
+    item_name = user_data
+    if item_name in _items:
+        _build_items.append(_items[item_name])
+        _refresh_build_display()
+        _on_build_changed(None, None)
+
+
+def _on_remove_item(sender, app_data, user_data) -> None:
+    """Remove an item from the build by index."""
+    idx = user_data
+    if 0 <= idx < len(_build_items):
+        _build_items.pop(idx)
+        _refresh_build_display()
+        _on_build_changed(None, None)
+
+
+def _on_clear_build(sender=None, app_data=None) -> None:
+    """Clear all items from the build."""
+    _build_items.clear()
+    _refresh_build_display()
+    _on_build_changed(None, None)
+
+
+def _refresh_build_display() -> None:
+    """Refresh the selected items display."""
+    if dpg.does_item_exist("bld_selected"):
+        dpg.delete_item("bld_selected", children_only=True)
+
+    total_cost = sum(item.cost for item in _build_items)
+    with dpg.group(parent="bld_selected"):
+        dpg.add_text(f"Items: {len(_build_items)} | Cost: {total_cost}", color=(180, 180, 180))
+        for i, item in enumerate(_build_items):
+            with dpg.group(horizontal=True):
+                dpg.add_button(
+                    label="X",
+                    callback=_on_remove_item,
+                    user_data=i,
+                    width=20,
+                )
+                dpg.add_text(f"{item.name} (T{item.tier}, {item.cost})")
+
+
+def _on_build_changed(sender, app_data) -> None:
+    """Recalculate and display build results."""
+    hero = _get_hero("bld_hero")
+    if not hero:
+        return
+
+    build = Build(items=list(_build_items))
+    boons = dpg.get_value("bld_boons")
+    accuracy = _pct("bld_acc")
+
+    result = BuildEngine.evaluate_build(
+        hero, build, boons=boons, accuracy=accuracy, headshot_rate=0.15,
+    )
+
+    if dpg.does_item_exist("bld_output"):
+        dpg.delete_item("bld_output", children_only=True)
+
+    with dpg.group(parent="bld_output"):
+        bs = result.build_stats
+
+        # Aggregated stats table
+        dpg.add_text("Aggregated Stats", color=(255, 200, 50))
+        with dpg.table(header_row=True, borders_innerH=True, borders_outerH=True,
+                       borders_innerV=True, borders_outerV=True, resizable=True):
+            dpg.add_table_column(label="Stat", width_fixed=True, init_width_or_weight=180)
+            dpg.add_table_column(label="Value", width_fixed=True, init_width_or_weight=120)
+
+            stat_rows = []
+            if bs.weapon_damage_pct:
+                stat_rows.append(("Weapon Damage", f"+{bs.weapon_damage_pct:.0%}"))
+            if bs.fire_rate_pct:
+                stat_rows.append(("Fire Rate", f"+{bs.fire_rate_pct:.0%}"))
+            if bs.ammo_flat:
+                stat_rows.append(("Ammo (flat)", f"+{bs.ammo_flat}"))
+            if bs.ammo_pct:
+                stat_rows.append(("Ammo (%)", f"+{bs.ammo_pct:.0%}"))
+            if bs.bonus_hp:
+                stat_rows.append(("Bonus HP", f"+{bs.bonus_hp:.0f}"))
+            if bs.spirit_power:
+                stat_rows.append(("Spirit Power", f"+{bs.spirit_power:.0f}"))
+            if bs.bullet_resist_pct:
+                stat_rows.append(("Bullet Resist", f"+{bs.bullet_resist_pct:.0%}"))
+            if bs.spirit_resist_pct:
+                stat_rows.append(("Spirit Resist", f"+{bs.spirit_resist_pct:.0%}"))
+            if bs.bullet_resist_shred:
+                stat_rows.append(("Bullet Shred", f"{bs.bullet_resist_shred:.0%}"))
+            if bs.bullet_lifesteal:
+                stat_rows.append(("Bullet Lifesteal", f"{bs.bullet_lifesteal:.0%}"))
+            if bs.bullet_shield:
+                stat_rows.append(("Bullet Shield", f"{bs.bullet_shield:.0f}"))
+            if bs.cooldown_reduction:
+                stat_rows.append(("CDR", f"{bs.cooldown_reduction:.0%}"))
+            stat_rows.append(("Total Cost", f"{bs.total_cost}"))
+            stat_rows.append(("Effective HP", f"{result.effective_hp:.0f}"))
+
+            for label, val in stat_rows:
+                with dpg.table_row():
+                    dpg.add_text(label)
+                    dpg.add_text(val)
+
+        dpg.add_spacer(height=10)
+
+        # Damage results
+        if result.bullet_result:
+            br = result.bullet_result
+            dpg.add_text("DPS Output", color=(100, 255, 100))
+            with dpg.table(header_row=True, borders_innerH=True, borders_outerH=True,
+                           borders_innerV=True, borders_outerV=True, resizable=True):
+                dpg.add_table_column(label="Metric", width_fixed=True, init_width_or_weight=180)
+                dpg.add_table_column(label="Value", width_fixed=True, init_width_or_weight=120)
+
+                dps_rows = [
+                    ("Damage / Bullet", _fv(br.damage_per_bullet)),
+                    ("Bullets / Sec", _fv(br.bullets_per_second)),
+                    ("Raw DPS", _fv(br.raw_dps)),
+                    ("Final DPS", _fv(br.final_dps)),
+                    ("Magazine Size", _fv(br.magazine_size, "d")),
+                    ("Damage / Mag", _fv(br.damage_per_magazine)),
+                    ("Magdump Time", _fv(br.magdump_time) + "s" if br.magdump_time > 0 else "-"),
+                ]
+                for label, val in dps_rows:
+                    with dpg.table_row():
+                        dpg.add_text(label)
+                        t = dpg.add_text(val)
+                        if label == "Final DPS":
+                            dpg.configure_item(t, color=(100, 255, 100))
+
+
+# ── Tab: Build Optimizer ────────────────────────────────────────
+
+
+def _build_optimizer_tab(parent: int | str) -> None:
+    with dpg.group(parent=parent, horizontal=True):
+        # Left: inputs
+        with dpg.child_window(width=320, height=-1):
+            dpg.add_text("Hero", color=(255, 200, 50))
+            dpg.add_combo(
+                _hero_names, label="Hero", tag="opt_hero",
+                default_value=_hero_names[0] if _hero_names else "",
+                width=200,
+            )
+            dpg.add_input_int(label="Boons", tag="opt_boons", default_value=0,
+                              min_value=0, max_value=50, width=120)
+            dpg.add_input_int(label="Soul Budget", tag="opt_budget", default_value=15000,
+                              min_value=500, max_value=100000, width=120)
+            dpg.add_input_int(label="Max Items", tag="opt_max_items", default_value=12,
+                              min_value=1, max_value=24, width=120)
+
+            dpg.add_separator()
+            dpg.add_checkbox(label="Exclude conditional items", tag="opt_excl_cond",
+                             default_value=True)
+
+            dpg.add_separator()
+            dpg.add_button(label="Optimize for Max DPS", callback=_on_optimize_dps, width=-1)
+
+        # Right: results
+        with dpg.child_window(width=-1, height=-1):
+            dpg.add_text("Optimizer Results", color=(100, 200, 255))
+            dpg.add_separator()
+            with dpg.group(tag="opt_output"):
+                pass
+
+
+def _on_optimize_dps(sender=None, app_data=None) -> None:
+    hero = _get_hero("opt_hero")
+    if not hero:
+        return
+
+    budget = dpg.get_value("opt_budget")
+    boons = dpg.get_value("opt_boons")
+    max_items = dpg.get_value("opt_max_items")
+    excl_cond = dpg.get_value("opt_excl_cond")
+
+    build = BuildOptimizer.best_dps_items(
+        _items, hero, budget=budget, boons=boons,
+        max_items=max_items, exclude_conditional=excl_cond,
+    )
+    result = BuildEngine.evaluate_build(hero, build, boons=boons)
+
+    if dpg.does_item_exist("opt_output"):
+        dpg.delete_item("opt_output", children_only=True)
+
+    with dpg.group(parent="opt_output"):
+        dpg.add_text(
+            f"Budget: {budget} | Spent: {build.total_cost} | Items: {len(build.items)}",
+            color=(180, 180, 180),
+        )
+        dpg.add_spacer(height=5)
+
+        # Item list
+        dpg.add_text("Optimal Items", color=(255, 200, 50))
+        with dpg.table(header_row=True, borders_innerH=True, borders_outerH=True,
+                       borders_innerV=True, borders_outerV=True, resizable=True):
+            dpg.add_table_column(label="#", width_fixed=True, init_width_or_weight=30)
+            dpg.add_table_column(label="Item", width_fixed=True, init_width_or_weight=220)
+            dpg.add_table_column(label="Category", width_fixed=True, init_width_or_weight=80)
+            dpg.add_table_column(label="Tier", width_fixed=True, init_width_or_weight=40)
+            dpg.add_table_column(label="Cost", width_fixed=True, init_width_or_weight=60)
+
+            for i, item in enumerate(build.items, 1):
+                with dpg.table_row():
+                    dpg.add_text(f"{i}")
+                    dpg.add_text(item.name)
+                    dpg.add_text(item.category.title())
+                    dpg.add_text(f"T{item.tier}")
+                    dpg.add_text(f"{item.cost}")
+
+        dpg.add_spacer(height=10)
+
+        # DPS results
+        if result.bullet_result:
+            br = result.bullet_result
+            dpg.add_text("DPS Output", color=(100, 255, 100))
+            with dpg.table(header_row=True, borders_innerH=True, borders_outerH=True,
+                           borders_innerV=True, borders_outerV=True, resizable=True):
+                dpg.add_table_column(label="Metric", width_fixed=True, init_width_or_weight=180)
+                dpg.add_table_column(label="Value", width_fixed=True, init_width_or_weight=120)
+
+                rows = [
+                    ("Raw DPS", _fv(br.raw_dps)),
+                    ("Final DPS", _fv(br.final_dps)),
+                    ("Damage / Bullet", _fv(br.damage_per_bullet)),
+                    ("Bullets / Sec", _fv(br.bullets_per_second)),
+                    ("Magazine Size", _fv(br.magazine_size, "d")),
+                    ("Damage / Mag", _fv(br.damage_per_magazine)),
+                    ("Effective HP", f"{result.effective_hp:.0f}"),
+                ]
+                for label, val in rows:
+                    with dpg.table_row():
+                        dpg.add_text(label)
+                        t = dpg.add_text(val)
+                        if label in ("Raw DPS", "Final DPS"):
+                            dpg.configure_item(t, color=(100, 255, 100))
+
+
 # ── Main entry point ─────────────────────────────────────────────
 
 
 def run_gui() -> None:
     """Launch the Dear PyGui Deadlock simulator."""
-    global _heroes, _hero_names
+    global _heroes, _hero_names, _items, _item_names
 
     _heroes = load_heroes()
     _hero_names = sorted(_heroes.keys())
+    _items = load_items()
+    _item_names = sorted(_items.keys())
 
     dpg.create_context()
 
     with dpg.window(tag="primary_window"):
         dpg.add_text("DEADLOCK COMBAT SIMULATOR", color=(255, 200, 50))
-        dpg.add_text(f"{len(_heroes)} heroes loaded", color=(140, 140, 140))
+        dpg.add_text(f"{len(_heroes)} heroes, {len(_items)} items loaded", color=(140, 140, 140))
         dpg.add_separator()
 
         with dpg.tab_bar():
@@ -711,6 +1033,12 @@ def run_gui() -> None:
 
             with dpg.tab(label="Rankings"):
                 _build_rankings_tab(dpg.last_item())
+
+            with dpg.tab(label="Build"):
+                _build_eval_tab(dpg.last_item())
+
+            with dpg.tab(label="Optimizer"):
+                _build_optimizer_tab(dpg.last_item())
 
     dpg.create_viewport(title="Deadlock Combat Simulator", width=1100, height=750)
     dpg.setup_dearpygui()

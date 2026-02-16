@@ -10,12 +10,13 @@ from __future__ import annotations
 import math
 import sys
 
-from ..data import load_heroes, load_shop_tiers
+from ..data import load_heroes, load_items, load_shop_tiers
+from ..engine.builds import BuildEngine, BuildOptimizer
 from ..engine.comparison import ComparisonEngine
 from ..engine.damage import DamageCalculator
 from ..engine.scaling import ScalingCalculator
 from ..engine.ttk import TTKCalculator
-from ..models import AbilityConfig, CombatConfig, HeroStats
+from ..models import AbilityConfig, Build, CombatConfig, HeroStats, Item
 
 
 # ─── Formatting helpers ──────────────────────────────────────────
@@ -277,6 +278,218 @@ def display_rankings(
         print(f"  {entry.rank:4d}  {entry.hero_name:<16}  {val_str:>12}")
 
 
+# ─── Build Functions ─────────────────────────────────────────────
+
+
+def _pick_items(
+    items: dict[str, Item],
+    prompt: str = "Add items to build",
+) -> list[Item]:
+    """Interactive item picker. User adds items one at a time."""
+    selected: list[Item] = []
+    categories = ["weapon", "vitality", "spirit"]
+
+    print(f"\n{prompt} (enter 'done' when finished)")
+    while True:
+        print(f"\n  Current build ({len(selected)} items, {sum(i.cost for i in selected)} souls):")
+        if selected:
+            for i, item in enumerate(selected, 1):
+                print(f"    {i}. {item.name} ({item.category} T{item.tier}, {item.cost})")
+        else:
+            print("    (empty)")
+
+        print(f"\n  Filter by category:")
+        for i, cat in enumerate(categories, 1):
+            cat_items = [it for it in items.values() if it.category == cat]
+            print(f"    {i}. {cat.title()} ({len(cat_items)} items)")
+        print(f"    4. Search by name")
+        print(f"    5. Done")
+
+        raw = input("\n  Choice: ").strip()
+        if raw.lower() in ("done", "5", "d"):
+            break
+
+        if raw == "4":
+            query = input("  Search: ").strip().lower()
+            matches = [it for it in items.values() if query in it.name.lower()]
+            if not matches:
+                print("  No matches found.")
+                continue
+            matches.sort(key=lambda x: (x.tier, x.cost, x.name))
+            for i, it in enumerate(matches, 1):
+                cond = f" [{it.condition}]" if it.condition else ""
+                print(f"    {i}. {it.name} ({it.category} T{it.tier}, {it.cost}){cond}")
+            idx_raw = input("  Select #: ").strip()
+            try:
+                idx = int(idx_raw) - 1
+                if 0 <= idx < len(matches):
+                    selected.append(matches[idx])
+                    print(f"  Added: {matches[idx].name}")
+            except ValueError:
+                pass
+            continue
+
+        try:
+            cat_idx = int(raw) - 1
+            if 0 <= cat_idx < len(categories):
+                cat = categories[cat_idx]
+                cat_items = sorted(
+                    [it for it in items.values() if it.category == cat],
+                    key=lambda x: (x.tier, x.cost, x.name),
+                )
+                print(f"\n  {cat.title()} Items:")
+                for i, it in enumerate(cat_items, 1):
+                    cond = f" [{it.condition}]" if it.condition else ""
+                    print(f"    {i:3d}. T{it.tier} {it.name:30s} ({it.cost:>5d}){cond}")
+                idx_raw = input("  Select #: ").strip()
+                try:
+                    idx = int(idx_raw) - 1
+                    if 0 <= idx < len(cat_items):
+                        selected.append(cat_items[idx])
+                        print(f"  Added: {cat_items[idx].name}")
+                except ValueError:
+                    pass
+        except ValueError:
+            pass
+
+    return selected
+
+
+def display_build_eval(
+    hero: HeroStats,
+    items_db: dict[str, Item],
+    heroes: dict[str, HeroStats],
+) -> None:
+    """Interactive build evaluation."""
+    item_list = _pick_items(items_db)
+    if not item_list:
+        print("  No items selected.")
+        return
+
+    build = Build(items=item_list)
+    boons = _prompt_int("  Boons", 0)
+    accuracy = _prompt_float("  Accuracy %", 50) / 100
+    hs_rate = _prompt_float("  Headshot rate %", 15) / 100
+
+    # Optional defender
+    print("\n  Evaluate TTK against a defender?")
+    vs_def = input("  (y/n) [n]: ").strip().lower() == "y"
+    defender = None
+    if vs_def:
+        defender = _pick_hero(heroes, "Select defender")
+
+    result = BuildEngine.evaluate_build(
+        hero, build,
+        boons=boons,
+        accuracy=accuracy,
+        headshot_rate=hs_rate,
+        defender=defender,
+    )
+
+    print(_header(f"Build Evaluation: {hero.name}"))
+    print(f"  Items ({len(build.items)}, {build.total_cost} souls):")
+    for item in build.items:
+        print(f"    - {item.name} ({item.category} T{item.tier}, {item.cost})")
+
+    bs = result.build_stats
+    print(f"\n  Aggregated Stats:")
+    if bs.weapon_damage_pct:
+        print(f"    Weapon Damage:    +{bs.weapon_damage_pct:.0%}")
+    if bs.fire_rate_pct:
+        print(f"    Fire Rate:        +{bs.fire_rate_pct:.0%}")
+    if bs.ammo_flat:
+        print(f"    Ammo (flat):      +{bs.ammo_flat}")
+    if bs.ammo_pct:
+        print(f"    Ammo (%):         +{bs.ammo_pct:.0%}")
+    if bs.bonus_hp:
+        print(f"    Bonus HP:         +{bs.bonus_hp:.0f}")
+    if bs.spirit_power:
+        print(f"    Spirit Power:     +{bs.spirit_power:.0f}")
+    if bs.bullet_resist_pct:
+        print(f"    Bullet Resist:    +{bs.bullet_resist_pct:.0%}")
+    if bs.spirit_resist_pct:
+        print(f"    Spirit Resist:    +{bs.spirit_resist_pct:.0%}")
+    if bs.bullet_resist_shred:
+        print(f"    Bullet Shred:     {bs.bullet_resist_shred:.0%}")
+    if bs.bullet_lifesteal:
+        print(f"    Bullet Lifesteal: {bs.bullet_lifesteal:.0%}")
+    if bs.bullet_shield:
+        print(f"    Bullet Shield:    {bs.bullet_shield:.0f}")
+    if bs.cooldown_reduction:
+        print(f"    CDR:              {bs.cooldown_reduction:.0%}")
+
+    print(f"\n  Effective HP:       {result.effective_hp:.0f}")
+
+    if result.bullet_result:
+        br = result.bullet_result
+        print(f"\n  Bullet Damage (Boon {boons}):")
+        print(f"    Damage/Bullet:    {_val(br.damage_per_bullet)}")
+        print(f"    Bullets/Sec:      {_val(br.bullets_per_second)}")
+        print(f"    Raw DPS:          {_val(br.raw_dps)}")
+        print(f"    Final DPS:        {_val(br.final_dps)}")
+        print(f"    Magazine:         {_val(br.magazine_size, 'd')} rounds")
+        print(f"    Damage/Mag:       {_val(br.damage_per_magazine)}")
+
+    if result.ttk_result:
+        tr = result.ttk_result
+        print(f"\n  TTK vs {defender.name}:")
+        print(f"    Target HP:        {tr.target_hp:.0f}")
+        print(f"    Ideal TTK:        {_val(tr.ttk_seconds)}s")
+        print(f"    Realistic TTK:    {_val(tr.realistic_ttk)}s")
+        print(f"    Can One-Mag:      {'Yes' if tr.can_one_mag else 'No'}")
+
+
+def display_build_optimizer(
+    hero: HeroStats,
+    items_db: dict[str, Item],
+    heroes: dict[str, HeroStats],
+) -> None:
+    """Run the build optimizer."""
+    budget = _prompt_int("  Soul budget", 15000)
+    boons = _prompt_int("  Boons", 0)
+
+    mode = _prompt_choice("Optimize for", ["Max DPS", "Min TTK"])
+
+    if mode == "Min TTK":
+        defender = _pick_hero(heroes, "Select defender")
+        accuracy = _prompt_float("  Accuracy %", 50) / 100
+        hs_rate = _prompt_float("  Headshot rate %", 15) / 100
+        build = BuildOptimizer.best_ttk_items(
+            items_db, hero, defender,
+            budget=budget, boons=boons,
+            accuracy=accuracy, headshot_rate=hs_rate,
+        )
+        result = BuildEngine.evaluate_build(
+            hero, build, boons=boons,
+            accuracy=accuracy, headshot_rate=hs_rate,
+            defender=defender,
+        )
+    else:
+        build = BuildOptimizer.best_dps_items(
+            items_db, hero, budget=budget, boons=boons,
+        )
+        result = BuildEngine.evaluate_build(hero, build, boons=boons)
+
+    print(_header(f"Optimal Build: {hero.name} ({mode})"))
+    print(f"  Budget: {budget} souls | Spent: {build.total_cost} souls")
+    print(f"  Items ({len(build.items)}):")
+    for item in build.items:
+        print(f"    - {item.name} ({item.category} T{item.tier}, {item.cost})")
+
+    if result.bullet_result:
+        br = result.bullet_result
+        print(f"\n  DPS Results (Boon {boons}):")
+        print(f"    Raw DPS:     {_val(br.raw_dps)}")
+        print(f"    Final DPS:   {_val(br.final_dps)}")
+        print(f"    Magazine:    {_val(br.magazine_size, 'd')} rounds")
+
+    if result.ttk_result:
+        tr = result.ttk_result
+        print(f"\n  TTK Result:")
+        print(f"    Realistic TTK: {_val(tr.realistic_ttk)}s")
+        print(f"    Can One-Mag:   {'Yes' if tr.can_one_mag else 'No'}")
+
+
 # ─── Menu / Main Loop ────────────────────────────────────────────
 
 MAIN_MENU = [
@@ -287,6 +500,8 @@ MAIN_MENU = [
     "Time-to-Kill Calculator",
     "Hero Comparison",
     "Hero Rankings",
+    "Build Evaluator",
+    "Build Optimizer",
     "Quit",
 ]
 
@@ -294,15 +509,16 @@ MAIN_MENU = [
 def run_cli() -> None:
     """Main CLI entry point."""
     print(_header("DEADLOCK COMBAT SIMULATOR", 40))
-    print("  Loading hero data...")
+    print("  Loading data...")
 
     try:
         heroes = load_heroes()
+        items_db = load_items()
     except Exception as e:
         print(f"  Error loading data: {e}")
         sys.exit(1)
 
-    print(f"  Loaded {len(heroes)} heroes.\n")
+    print(f"  Loaded {len(heroes)} heroes, {len(items_db)} items.\n")
 
     while True:
         print(f"\n{'─' * 40}")
@@ -394,6 +610,14 @@ def run_cli() -> None:
                 stat = _prompt_choice("Rank by", stat_options)
                 boons = _prompt_int("  Boon level", 0)
                 display_rankings(heroes, stat, boons)
+
+            elif choice == "Build Evaluator":
+                hero = _pick_hero(heroes, "Select hero for build")
+                display_build_eval(hero, items_db, heroes)
+
+            elif choice == "Build Optimizer":
+                hero = _pick_hero(heroes, "Select hero to optimize")
+                display_build_optimizer(hero, items_db, heroes)
 
         except KeyboardInterrupt:
             print("\n  (Cancelled)")

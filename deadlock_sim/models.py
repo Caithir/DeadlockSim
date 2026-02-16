@@ -55,6 +55,7 @@ class CombatConfig:
     weapon_damage_bonus: float = 0.0  # flat % increase to weapon damage
     fire_rate_bonus: float = 0.0  # flat % increase to fire rate
     ammo_increase: float = 0.0  # multiplier for extra ammo (1 = doubled)
+    ammo_flat: int = 0  # flat bonus ammo from items
 
     # Shred sources (up to 5 stacking sources)
     shred: list[float] = field(default_factory=list)
@@ -159,3 +160,90 @@ class ScalingSnapshot:
     spirit: float
     dps: float
     dpm: float
+
+
+@dataclass
+class Item:
+    """A purchasable Deadlock item with combat-relevant stats."""
+
+    name: str
+    category: str  # "weapon", "vitality", "spirit"
+    tier: int  # 1-4
+    cost: int
+
+    # Combat stats (all default to 0 if not present on the item)
+    weapon_damage_pct: float = 0.0
+    fire_rate_pct: float = 0.0
+    ammo_flat: int = 0
+    ammo_pct: float = 0.0
+    bullet_resist_pct: float = 0.0
+    spirit_resist_pct: float = 0.0
+    bonus_hp: float = 0.0
+    spirit_power: float = 0.0
+    bullet_lifesteal: float = 0.0
+    spirit_lifesteal: float = 0.0
+    hp_regen: float = 0.0
+    move_speed: float = 0.0
+    sprint_speed: float = 0.0
+    bullet_shield: float = 0.0
+    spirit_shield: float = 0.0
+    headshot_bonus: float = 0.0
+    bullet_resist_shred: float = 0.0
+    spirit_resist_shred: float = 0.0
+    cooldown_reduction: float = 0.0
+    spirit_amp_pct: float = 0.0
+
+    # Optional condition describing when the stat applies
+    condition: str = ""
+
+
+@dataclass
+class Build:
+    """A set of items constituting a hero build."""
+
+    items: list[Item] = field(default_factory=list)
+
+    @property
+    def total_cost(self) -> int:
+        return sum(item.cost for item in self.items)
+
+    @property
+    def item_names(self) -> list[str]:
+        return [item.name for item in self.items]
+
+
+@dataclass
+class BuildStats:
+    """Aggregated combat stats from a build's items."""
+
+    weapon_damage_pct: float = 0.0
+    fire_rate_pct: float = 0.0
+    ammo_flat: int = 0
+    ammo_pct: float = 0.0
+    bullet_resist_pct: float = 0.0
+    spirit_resist_pct: float = 0.0
+    bonus_hp: float = 0.0
+    spirit_power: float = 0.0
+    bullet_lifesteal: float = 0.0
+    spirit_lifesteal: float = 0.0
+    hp_regen: float = 0.0
+    bullet_shield: float = 0.0
+    spirit_shield: float = 0.0
+    headshot_bonus: float = 0.0
+    bullet_resist_shred: float = 0.0
+    spirit_resist_shred: float = 0.0
+    cooldown_reduction: float = 0.0
+    spirit_amp_pct: float = 0.0
+    total_cost: int = 0
+
+
+@dataclass
+class BuildResult:
+    """Result of evaluating a build for a hero."""
+
+    hero_name: str
+    build: Build
+    build_stats: BuildStats
+    bullet_result: BulletResult | None = None
+    ttk_result: TTKResult | None = None
+    effective_hp: float = 0.0
