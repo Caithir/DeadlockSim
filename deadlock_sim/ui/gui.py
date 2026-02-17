@@ -1247,5 +1247,5 @@ def run_gui() -> None:
     ui.run(title="Deadlock Combat Simulator", port=8080, show=False)
 
 
-if __name__ == "__main__":
+if __name__ in {"__main__", "__mp_main__"}:
     run_gui()
