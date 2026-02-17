@@ -1,15 +1,16 @@
 """NiceGUI web UI for the Deadlock combat simulator.
 
 Browser-based UI with tabs for each simulator feature.
-All calculations delegated to deadlock_sim.engine — this module
-is purely presentation.
+Item shop uses an icon grid with hover tooltips matching the in-game style.
+All calculations delegated to deadlock_sim.engine.
 """
 
 from __future__ import annotations
 
 import math
+from pathlib import Path
 
-from nicegui import ui
+from nicegui import app, ui
 
 from ..data import load_heroes, load_items
 from ..engine.builds import BuildEngine, BuildOptimizer
@@ -27,6 +28,191 @@ _items: dict[str, Item] = {}
 _item_names: list[str] = []
 _build_items: list[Item] = []
 
+# ── Image mapping ─────────────────────────────────────────────────
+
+_ITEM_IMAGE: dict[str, str] = {
+    "Active Reload": "fast_reload.png",
+    "Alchemical Fire": "electrified_bullets.png",
+    "Arcane Surge": "arcane_eater.png",
+    "Arctic Blast": "ice_blast.png",
+    "Armor Piercing Rounds": "armor_breaking_bullets.png",
+    "Backstabber": "acolytes_glove.png",
+    "Ballistic Enchantment": "advanced_weaponry.png",
+    "Battle Vest": "bullet_armor.png",
+    "Berserker": "berserker.png",
+    "Blood Tribute": "bullet_damage_aura.png",
+    "Boundless Spirit": "boundless_spirit.png",
+    "Bullet Lifesteal": "health_stealing_bullets.png",
+    "Bullet Resilience": "bullet_armor_plus.png",
+    "Bullet Resist Shredder": "bullet_resist_shredder.png",
+    "Burst Fire": "fire_rate_plus.png",
+    "Capacitor": "tech_range.png",
+    "Cheat Death": "last_stand.png",
+    "Close Quarters": "close_range.png",
+    "Cold Front": "ice_blast.png",
+    "Colossus": "colossus.png",
+    "Compress Cooldown": "advanced_recharge.png",
+    "Counterspell": "magic_burst.png",
+    "Crippling Headshot": "headshot_booster.png",
+    "Crushing Fists": "boxing_glove.png",
+    "Cultist Sacrifice": "reaper_rounds.png",
+    "Cursed Relic": "quantum_chimaera.png",
+    "Debuff Reducer": "debuff_reducer.png",
+    "Decay": "rupture.png",
+    "Disarming Hex": "disarm.png",
+    "Dispel Magic": "tech_purge.png",
+    "Divine Barrier": "deployable_bullet_shield.png",
+    "Diviner's Kevlar": "arcane_medallion.png",
+    "Duration Extender": "duration_extender.png",
+    "Echo Shard": "echo_shard.png",
+    "Enchanter's Emblem": "pristine_emblem.png",
+    "Enduring Speed": "zipline_speed.png",
+    "Escalating Exposure": "escalating_exposure.png",
+    "Escalating Resilience": "bullet_armor_pulse.png",
+    "Ethereal Shift": "shifting_shroud.png",
+    "Express Shot": "fire_rate_plus.png",
+    "Extended Magazine": "titanic_magazine.png",
+    "Extra Charge": "extra_charge.png",
+    "Extra Health": "health.png",
+    "Extra Regen": "health_regen.png",
+    "Extra Spirit": "soaring_spirit.png",
+    "Extra Stamina": "superior_stamina.png",
+    "Fleetfoot": "fleetfoot_boots.png",
+    "Focus Lens": "enhanced_precision.png",
+    "Fortitude": "health_tank.png",
+    "Frenzy": "fervor.png",
+    "Fury Trance": "soaring_spirit.png",
+    "Glass Cannon": "glass_cannon.png",
+    "Greater Expansion": "area_immobilize.png",
+    "Guardian Ward": "bullet_armor_reduction_aura.png",
+    "Headhunter": "headhunter.png",
+    "Headshot Booster": "headshot_booster.png",
+    "Healbane": "healbane.png",
+    "Healing Booster": "healing_booster.png",
+    "Healing Nova": "health_nova.png",
+    "Healing Rite": "healing_booster.png",
+    "Healing Tempo": "health_regen_aura.png",
+    "Heroic Aura": "fire_rate_aura.png",
+    "High-Velocity Rounds": "high_velocity_mag.png",
+    "Hollow Point": "hollow_point.png",
+    "Hunter's Aura": "bullet_armor_reduction_aura.png",
+    "Improved Spirit": "arcane_persistance.png",
+    "Infuser": "infuser.png",
+    "Inhibitor": "inhibitor.png",
+    "Intensifying Magazine": "clip_size.png",
+    "Juggernaut": "endurance.png",
+    "Kinetic Dash": "kinetic_sash.png",
+    "Knockdown": "knockdown.png",
+    "Leech": "leech.png",
+    "Lifestrike": "lifestrike_gauntlets.png",
+    "Lightning Scroll": "emp_wave.png",
+    "Long Range": "long_range.png",
+    "Lucky Shot": "fire_rate_plus_plus.png",
+    "Magic Carpet": "soaring_spirit.png",
+    "Majestic Leap": "controlled_fall.png",
+    "Melee Charge": "melee_charge.png",
+    "Melee Lifesteal": "health_stealing_tech.png",
+    "Mercurial Magnum": "ammo_scavenger.png",
+    "Metal Skin": "metal_skin.png",
+    "Monster Rounds": "detention_rounds.png",
+    "Mystic Burst": "magic_burst.png",
+    "Mystic Expansion": "area_immobilize.png",
+    "Mystic Regeneration": "health_regen.png",
+    "Mystic Reverb": "magic_reverb.png",
+    "Mystic Shot": "magic_shock.png",
+    "Mystic Slow": "slowing_hex.png",
+    "Mystic Vulnerability": "tech_vulnerability.png",
+    "Opening Rounds": "detention_rounds.png",
+    "Phantom Strike": "phantom_strike.png",
+    "Plated Armor": "base_armor.png",
+    "Point Blank": "point_blank.png",
+    "Quicksilver Reload": "quick_reload.png",
+    "Radiant Regeneration": "medic_bullets.png",
+    "Rapid Recharge": "rapid_recharge.png",
+    "Rapid Rounds": "rapid_rounds.png",
+    "Reactive Barrier": "bullet_shield.png",
+    "Rebuttal": "melee_deflector.png",
+    "Recharging Rush": "adrenaline_rush.png",
+    "Refresher": "refresher_module.png",
+    "Rescue Beam": "medic_beam.png",
+    "Restorative Locket": "restorative_locket.png",
+    "Restorative Shot": "medic_bullets.png",
+    "Return Fire": "return_fire.png",
+    "Ricochet": "ricochet.png",
+    "Rusted Barrel": "ammo_scavenger.png",
+    "Scourge": "spiritual_dominion.png",
+    "Shadow Weave": "cloaking_device.png",
+    "Sharpshooter": "longshot.png",
+    "Silence Wave": "emp_wave.png",
+    "Silencer": "cloaking_device.png",
+    "Siphon Bullets": "siphon_bullets.png",
+    "Slowing Bullets": "slowing_bullets.png",
+    "Slowing Hex": "slowing_tech.png",
+    "Spellbreaker": "tech_purge.png",
+    "Spellslinger": "advanced_weaponry.png",
+    "Spirit Burn": "thermal_detonator.png",
+    "Spirit Lifesteal": "health_stealing_bullets.png",
+    "Spirit Rend": "piercing_bullets.png",
+    "Spirit Resilience": "tech_armor_aura.png",
+    "Spirit Sap": "spiritual_flow.png",
+    "Spirit Shielding": "tech_shield_pulse.png",
+    "Spirit Shredder Bullets": "serrated_bullets.png",
+    "Spirit Snatch": "spiritual_dominion.png",
+    "Spirit Strike": "magic_shock.png",
+    "Spiritual Overflow": "magic_overflow.png",
+    "Split Shot": "banshee_slugs.png",
+    "Sprint Boots": "springy_boots.png",
+    "Stamina Mastery": "improved_stamina.png",
+    "Superior Cooldown": "advanced_recharge.png",
+    "Superior Duration": "duration_extender.png",
+    "Suppressor": "tech_damage.png",
+    "Surge of Power": "soaring_spirit.png",
+    "Swift Striker": "fire_rate.png",
+    "Tankbuster": "rupture.png",
+    "Tesla Bullets": "emp_bullets.png",
+    "Titanic Magazine": "titanic_magazine.png",
+    "Torment Pulse": "torment_aura.png",
+    "Toxic Bullets": "toxic_bullets.png",
+    "Transcendent Cooldown": "advanced_recharge.png",
+    "Trophy Collector": "rebirth.png",
+    "Unstoppable": "unstoppable.png",
+    "Vampiric Burst": "vampiric_burst.png",
+    "Veil Walker": "veil_walker.png",
+    "Vortex Web": "force_blast.png",
+    "Warp Stone": "warp_stone.png",
+    "Weakening Headshot": "headshot_booster.png",
+    "Weapon Shielding": "tech_shield_pulse.png",
+    "Weighted Shots": "fire_rate.png",
+    "Witchmail": "tech_armor.png",
+}
+
+# Category colors matching in-game (orange weapon, green vitality, purple spirit)
+_CAT_COLORS = {
+    "weapon": {"bg": "#3d2a12", "border": "#d97e1f", "text": "#f5a623", "label": "Weapon"},
+    "vitality": {"bg": "#1a3320", "border": "#4caf50", "text": "#6dd56e", "label": "Vitality"},
+    "spirit": {"bg": "#2a1a3d", "border": "#9c5dce", "text": "#c084fc", "label": "Spirit"},
+}
+
+_TIER_COSTS = {1: 500, 2: 1250, 3: 3000, 4: 6200}
+
+# Sort criteria available for items
+_SORT_OPTIONS = {
+    "Cost": lambda item: item.cost,
+    "Name": lambda item: item.name,
+    "Weapon Damage %": lambda item: -item.weapon_damage_pct,
+    "Fire Rate %": lambda item: -item.fire_rate_pct,
+    "Bonus HP": lambda item: -item.bonus_hp,
+    "Bullet Resist %": lambda item: -item.bullet_resist_pct,
+    "Spirit Resist %": lambda item: -item.spirit_resist_pct,
+    "Spirit Power": lambda item: -item.spirit_power,
+    "Bullet Lifesteal %": lambda item: -item.bullet_lifesteal,
+    "HP Regen": lambda item: -item.hp_regen,
+    "Bullet Shield": lambda item: -item.bullet_shield,
+    "Bullet Shred %": lambda item: -item.bullet_resist_shred,
+    "Cooldown Reduction %": lambda item: -item.cooldown_reduction,
+}
+
+
 # ── Helpers ───────────────────────────────────────────────────────
 
 
@@ -37,6 +223,169 @@ def _fv(v: float, fmt: str = ".2f", zero_as_na: bool = True) -> str:
     if zero_as_na and v == 0:
         return "-"
     return f"{v:{fmt}}"
+
+
+def _item_image_url(item: Item) -> str:
+    """Return the static URL for an item's icon."""
+    fname = _ITEM_IMAGE.get(item.name, "")
+    if fname:
+        return f"/static/items/{fname}"
+    return "/static/ui/all_stats.png"
+
+
+def _item_stat_lines(item: Item) -> list[str]:
+    """Build human-readable stat lines for an item tooltip."""
+    lines: list[str] = []
+    if item.weapon_damage_pct:
+        lines.append(f"+{item.weapon_damage_pct:.0%} Weapon Damage")
+    if item.fire_rate_pct:
+        lines.append(f"+{item.fire_rate_pct:.0%} Fire Rate")
+    if item.ammo_flat:
+        lines.append(f"+{item.ammo_flat} Ammo")
+    if item.ammo_pct:
+        lines.append(f"+{item.ammo_pct:.0%} Ammo")
+    if item.bonus_hp:
+        lines.append(f"+{item.bonus_hp:.0f} HP")
+    if item.hp_regen:
+        lines.append(f"+{item.hp_regen:.1f} HP Regen")
+    if item.spirit_power:
+        lines.append(f"+{item.spirit_power:.0f} Spirit Power")
+    if item.bullet_resist_pct:
+        lines.append(f"+{item.bullet_resist_pct:.0%} Bullet Resist")
+    if item.spirit_resist_pct:
+        lines.append(f"+{item.spirit_resist_pct:.0%} Spirit Resist")
+    if item.bullet_lifesteal:
+        lines.append(f"+{item.bullet_lifesteal:.0%} Bullet Lifesteal")
+    if item.spirit_lifesteal:
+        lines.append(f"+{item.spirit_lifesteal:.0%} Spirit Lifesteal")
+    if item.bullet_shield:
+        lines.append(f"+{item.bullet_shield:.0f} Bullet Shield")
+    if item.spirit_shield:
+        lines.append(f"+{item.spirit_shield:.0f} Spirit Shield")
+    if item.headshot_bonus:
+        lines.append(f"+{item.headshot_bonus:.0f} Headshot Damage")
+    if item.bullet_resist_shred:
+        lines.append(f"{item.bullet_resist_shred:.0%} Bullet Resist Shred")
+    if item.spirit_resist_shred:
+        lines.append(f"{item.spirit_resist_shred:.0%} Spirit Resist Shred")
+    if item.cooldown_reduction:
+        lines.append(f"{item.cooldown_reduction:.0%} CDR")
+    if item.spirit_amp_pct:
+        lines.append(f"+{item.spirit_amp_pct:.0%} Spirit Amp")
+    if item.move_speed:
+        lines.append(f"+{item.move_speed:.1f} Move Speed")
+    if item.sprint_speed:
+        lines.append(f"+{item.sprint_speed:.1f} Sprint Speed")
+    if item.condition:
+        lines.append(f"Condition: {item.condition}")
+    return lines
+
+
+# ── Custom CSS ────────────────────────────────────────────────────
+
+_CUSTOM_CSS = """
+.item-icon-btn {
+    position: relative;
+    width: 64px; height: 64px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: transform 0.1s, box-shadow 0.1s;
+    padding: 0; margin: 2px;
+    display: flex; align-items: center; justify-content: center;
+    overflow: visible;
+}
+.item-icon-btn:hover {
+    transform: scale(1.15);
+    box-shadow: 0 0 12px rgba(255,255,255,0.3);
+    z-index: 100;
+}
+.item-icon-btn img {
+    width: 48px; height: 48px;
+    object-fit: contain;
+    filter: brightness(1.1);
+}
+.item-tooltip {
+    display: none;
+    position: absolute;
+    bottom: 72px; left: 50%;
+    transform: translateX(-50%);
+    min-width: 220px; max-width: 300px;
+    padding: 10px 14px;
+    border-radius: 8px;
+    z-index: 9999;
+    pointer-events: none;
+    white-space: nowrap;
+}
+.item-icon-btn:hover .item-tooltip {
+    display: block;
+}
+.tooltip-name {
+    font-weight: bold; font-size: 14px;
+    margin-bottom: 4px;
+}
+.tooltip-cost {
+    font-size: 12px; color: #e8c252;
+    margin-bottom: 6px;
+}
+.tooltip-stat {
+    font-size: 12px; color: #b0e8b0;
+    line-height: 1.5;
+}
+.tooltip-condition {
+    font-size: 11px; color: #ffb347;
+    font-style: italic; margin-top: 4px;
+}
+.tier-header {
+    font-size: 14px; font-weight: bold;
+    padding: 6px 12px;
+    border-radius: 4px;
+    margin: 8px 0 4px 0;
+}
+.shop-grid {
+    display: flex; flex-wrap: wrap;
+    gap: 2px; padding: 4px;
+    align-items: flex-start;
+}
+.build-item-chip {
+    display: flex; align-items: center;
+    gap: 6px; padding: 4px 8px;
+    border-radius: 6px;
+    margin: 2px;
+}
+.build-item-chip img {
+    width: 28px; height: 28px;
+    object-fit: contain;
+}
+.cat-tab { padding: 8px 20px; font-weight: bold; border-radius: 6px 6px 0 0; cursor: pointer; }
+.cat-tab-active { border-bottom: 3px solid; }
+"""
+
+
+def _render_item_icon(item: Item, on_click_fn) -> None:
+    """Render a single item as an icon button with hover tooltip."""
+    colors = _CAT_COLORS.get(item.category, _CAT_COLORS["weapon"])
+    stat_lines = _item_stat_lines(item)
+
+    stat_html = ""
+    for line in stat_lines:
+        if line.startswith("Condition:"):
+            stat_html += f'<div class="tooltip-condition">{line}</div>'
+        else:
+            stat_html += f'<div class="tooltip-stat">{line}</div>'
+
+    tooltip_html = f"""
+        <div class="item-tooltip" style="background: {colors['bg']}; border: 1px solid {colors['border']};">
+            <div class="tooltip-name" style="color: {colors['text']};">{item.name}</div>
+            <div class="tooltip-cost">T{item.tier} - {item.cost} Souls</div>
+            {stat_html}
+        </div>
+    """
+
+    with ui.element("div").classes("item-icon-btn").style(
+        f"background: {colors['bg']}; border: 2px solid {colors['border']};"
+    ).on("click", lambda _, it=item: on_click_fn(it)):
+        ui.image(_item_image_url(item)).style("width: 48px; height: 48px; object-fit: contain;")
+        ui.html(tooltip_html)
 
 
 # ── Tab: Hero Stats ──────────────────────────────────────────────
@@ -96,7 +445,6 @@ def _build_hero_stats_tab() -> None:
 
 def _build_bullet_tab() -> None:
     with ui.row().classes("w-full gap-6"):
-        # Left: inputs
         with ui.column().classes("w-80 gap-2"):
             ui.label("Attacker").classes("text-amber-400 font-bold")
             bd_hero = ui.select(options=_hero_names, value=_hero_names[0] if _hero_names else "", label="Hero").classes("w-48")
@@ -119,7 +467,6 @@ def _build_bullet_tab() -> None:
             bd_acc = ui.number(label="Accuracy %", value=100, min=0, max=100).classes("w-32")
             bd_hs = ui.number(label="Headshot Rate %", value=0, min=0, max=100).classes("w-32")
 
-        # Right: results
         with ui.column().classes("flex-grow"):
             ui.label("Results").classes("text-sky-400 font-bold")
             ui.separator()
@@ -317,7 +664,7 @@ def _build_scaling_tab() -> None:
         dps_g = f"{growth['dps_growth']:.1%}" if growth["dps_growth"] else "-"
         hp_g = f"{growth['hp_growth']:.1%}" if growth["hp_growth"] else "-"
         agg_g = f"{growth['aggregate_growth']:.1%}" if growth["aggregate_growth"] else "-"
-        growth_label.text = f"Growth (0 → {max_b} boons):  DPS {dps_g}  |  HP {hp_g}  |  Aggregate {agg_g}"
+        growth_label.text = f"Growth (0 \u2192 {max_b} boons):  DPS {dps_g}  |  HP {hp_g}  |  Aggregate {agg_g}"
 
     sc_hero.on_value_change(update)
     sc_max.on_value_change(update)
@@ -329,7 +676,6 @@ def _build_scaling_tab() -> None:
 
 def _build_ttk_tab() -> None:
     with ui.row().classes("w-full gap-6"):
-        # Left: inputs
         with ui.column().classes("w-80 gap-2"):
             ui.label("Attacker").classes("text-amber-400 font-bold")
             ttk_atk = ui.select(options=_hero_names, value=_hero_names[0] if _hero_names else "", label="Attacker").classes("w-48")
@@ -349,7 +695,6 @@ def _build_ttk_tab() -> None:
             ttk_acc = ui.number(label="Accuracy %", value=50, min=0, max=100).classes("w-32")
             ttk_hs = ui.number(label="Headshot %", value=15, min=0, max=100).classes("w-32")
 
-        # Right: results + plot
         with ui.column().classes("flex-grow"):
             ui.label("Results").classes("text-sky-400 font-bold")
             ui.separator()
@@ -417,7 +762,6 @@ def _build_ttk_tab() -> None:
             ]
             ui.table(columns=columns, rows=rows, row_key="metric").classes("w-96").props("dense flat bordered")
 
-        # Update TTK curve plot
         curve = TTKCalculator.ttk_curve(atk, defender, config, max_boons=35)
         boons = [float(b) for b, _ in curve]
         ideal = [r.ttk_seconds for _, r in curve]
@@ -490,7 +834,6 @@ def _build_comparison_tab() -> None:
             ]
             ui.table(columns=columns, rows=rows, row_key="stat").classes("w-full max-w-2xl").props("dense flat bordered")
 
-        # DPS scaling plot
         curve_a = ScalingCalculator.scaling_curve(hero_a, 35)
         curve_b = ScalingCalculator.scaling_curve(hero_b, 35)
         boons_x = [s.boon_level for s in curve_a]
@@ -554,60 +897,106 @@ def _build_rankings_tab() -> None:
     update()
 
 
-# ── Tab: Build Evaluator ────────────────────────────────────────
+# ── Tab: Build Evaluator (shop-style) ───────────────────────────
 
 
 def _build_eval_tab() -> None:
-    with ui.row().classes("w-full gap-6"):
-        # Left: inputs
-        with ui.column().classes("w-96 gap-2"):
-            ui.label("Hero").classes("text-amber-400 font-bold")
-            bld_hero = ui.select(options=_hero_names, value=_hero_names[0] if _hero_names else "", label="Hero").classes("w-52")
-            with ui.row().classes("gap-2"):
-                bld_boons = ui.number(label="Boons", value=0, min=0, max=50, step=1).classes("w-28")
-                bld_acc = ui.number(label="Accuracy %", value=50, min=0, max=100).classes("w-28")
+    # ── Top bar: hero selection + build config
+    with ui.row().classes("w-full items-end gap-4"):
+        bld_hero = ui.select(options=_hero_names, value=_hero_names[0] if _hero_names else "", label="Hero").classes("w-48")
+        bld_boons = ui.number(label="Boons", value=0, min=0, max=50, step=1).classes("w-28")
+        bld_acc = ui.number(label="Accuracy %", value=50, min=0, max=100).classes("w-28")
 
-            ui.separator()
-            ui.label("Add Item").classes("text-amber-400 font-bold")
-            cat_filter = ui.select(options=["All", "Weapon", "Vitality", "Spirit"], value="All", label="Category").classes("w-32")
-            bld_search = ui.input(label="Search", placeholder="Filter items...").classes("w-48")
-            item_list_container = ui.scroll_area().classes("w-full h-64 border rounded")
+    ui.separator()
 
-            ui.separator()
-            ui.label("Current Build").classes("text-green-400 font-bold")
-            build_display = ui.column().classes("w-full")
-            ui.button("Clear Build", on_click=lambda: clear_build()).classes("w-full")
-
-        # Right: results
+    with ui.row().classes("w-full gap-4"):
+        # ── LEFT: Item Shop ──
         with ui.column().classes("flex-grow"):
-            ui.label("Build Results").classes("text-sky-400 font-bold")
-            ui.separator()
-            bld_output = ui.column().classes("w-full")
+            # Category tabs + filter controls
+            with ui.row().classes("w-full items-center gap-3 flex-wrap"):
+                cat_filter = ui.select(
+                    options=["All", "Weapon", "Vitality", "Spirit"],
+                    value="All", label="Category",
+                ).classes("w-32")
+                tier_filter = ui.select(
+                    options=["All Tiers", "T1", "T2", "T3", "T4"],
+                    value="All Tiers", label="Tier",
+                ).classes("w-28")
+                sort_select = ui.select(
+                    options=list(_SORT_OPTIONS.keys()),
+                    value="Cost", label="Sort By",
+                ).classes("w-40")
+                bld_search = ui.input(label="Search", placeholder="Filter items...").classes("w-40")
 
-    def refresh_item_list(_=None):
+            # Item icon grid area
+            shop_container = ui.scroll_area().classes("w-full border rounded").style(
+                "height: 420px; background: #1a1a2e;"
+            )
+
+        # ── RIGHT: Build + Results ──
+        with ui.column().classes("w-96"):
+            ui.label("Current Build").classes("text-lg font-bold text-green-400")
+            build_display = ui.scroll_area().classes("w-full border rounded").style(
+                "height: 200px; background: #1a1a2e;"
+            )
+            with ui.row().classes("w-full gap-2"):
+                ui.button("Clear Build", on_click=lambda: clear_build()).classes("flex-grow")
+
+            ui.separator()
+            ui.label("Build Results").classes("text-lg font-bold text-sky-400")
+            bld_output = ui.scroll_area().classes("w-full").style(
+                "height: 300px;"
+            )
+
+    def refresh_shop(_=None):
         cat = (cat_filter.value or "All").lower()
+        tier_str = tier_filter.value or "All Tiers"
         search = (bld_search.value or "").lower().strip()
+        sort_key_name = sort_select.value or "Cost"
+        sort_fn = _SORT_OPTIONS.get(sort_key_name, _SORT_OPTIONS["Cost"])
 
         filtered = []
         for item in _items.values():
             if cat != "all" and item.category != cat:
                 continue
+            if tier_str != "All Tiers" and f"T{item.tier}" != tier_str:
+                continue
             if search and search not in item.name.lower():
                 continue
             filtered.append(item)
 
-        filtered.sort(key=lambda x: (x.tier, x.cost, x.name))
+        filtered.sort(key=sort_fn)
 
-        item_list_container.clear()
-        with item_list_container:
-            with ui.column().classes("w-full gap-0"):
-                for item in filtered:
-                    cond = f"  [{item.condition}]" if item.condition else ""
-                    label = f"T{item.tier} {item.name} ({item.cost}){cond}"
-                    ui.button(
-                        label,
-                        on_click=lambda _, it=item: add_item(it),
-                    ).props("flat dense no-caps").classes("w-full text-left justify-start text-xs")
+        shop_container.clear()
+        with shop_container:
+            if sort_key_name == "Cost":
+                # Group by tier when sorting by cost (like in-game shop)
+                for tier in [1, 2, 3, 4]:
+                    tier_items = [i for i in filtered if i.tier == tier]
+                    if not tier_items:
+                        continue
+
+                    # Group within tier by category
+                    for cat_key in ["weapon", "vitality", "spirit"]:
+                        cat_items = [i for i in tier_items if i.category == cat_key]
+                        if not cat_items:
+                            continue
+                        colors = _CAT_COLORS[cat_key]
+                        with ui.element("div").style(
+                            f"background: {colors['bg']}; border-left: 3px solid {colors['border']}; "
+                            f"margin: 4px 0; padding: 4px 8px; border-radius: 4px;"
+                        ):
+                            ui.label(
+                                f"{colors['label']} T{tier} - {tier_items[0].cost} Souls"
+                            ).style(f"color: {colors['text']}; font-size: 13px; font-weight: bold;")
+                            with ui.element("div").classes("shop-grid"):
+                                for item in cat_items:
+                                    _render_item_icon(item, add_item)
+            else:
+                # Flat grid for non-cost sorting
+                with ui.element("div").classes("shop-grid"):
+                    for item in filtered:
+                        _render_item_icon(item, add_item)
 
     def add_item(item: Item):
         _build_items.append(item)
@@ -629,14 +1018,16 @@ def _build_eval_tab() -> None:
         build_display.clear()
         total_cost = sum(item.cost for item in _build_items)
         with build_display:
-            ui.label(f"Items: {len(_build_items)} | Cost: {total_cost}").classes("text-gray-400")
-            for i, item in enumerate(_build_items):
-                with ui.row().classes("items-center gap-1"):
-                    ui.button(
-                        "X",
-                        on_click=lambda _, idx=i: remove_item(idx),
-                    ).props("flat dense color=red size=xs")
-                    ui.label(f"{item.name} (T{item.tier}, {item.cost})").classes("text-sm")
+            ui.label(f"{len(_build_items)} items | {total_cost} Souls").classes("text-gray-400 text-sm")
+            with ui.element("div").style("display: flex; flex-wrap: wrap; gap: 2px;"):
+                for i, item in enumerate(_build_items):
+                    colors = _CAT_COLORS.get(item.category, _CAT_COLORS["weapon"])
+                    with ui.element("div").classes("build-item-chip").style(
+                        f"background: {colors['bg']}; border: 1px solid {colors['border']}; cursor: pointer;"
+                    ).on("click", lambda _, idx=i: remove_item(idx)):
+                        ui.image(_item_image_url(item)).style("width: 28px; height: 28px; object-fit: contain;")
+                        ui.label(item.name).style(f"color: {colors['text']}; font-size: 12px;")
+                        ui.label("x").style("color: #ff6b6b; font-size: 11px; margin-left: 4px;")
 
     def update_results(_=None):
         hero = _heroes.get(bld_hero.value)
@@ -688,7 +1079,7 @@ def _build_eval_tab() -> None:
                 {"name": "stat", "label": "Stat", "field": "stat", "align": "left"},
                 {"name": "value", "label": "Value", "field": "value", "align": "left"},
             ]
-            ui.table(columns=columns, rows=stat_rows, row_key="stat").classes("w-96").props("dense flat bordered")
+            ui.table(columns=columns, rows=stat_rows, row_key="stat").classes("w-full").props("dense flat bordered")
 
             if result.bullet_result:
                 br = result.bullet_result
@@ -706,15 +1097,17 @@ def _build_eval_tab() -> None:
                     {"name": "metric", "label": "Metric", "field": "metric", "align": "left"},
                     {"name": "value", "label": "Value", "field": "value", "align": "left"},
                 ]
-                ui.table(columns=dps_columns, rows=dps_rows, row_key="metric").classes("w-96").props("dense flat bordered")
+                ui.table(columns=dps_columns, rows=dps_rows, row_key="metric").classes("w-full").props("dense flat bordered")
 
-    cat_filter.on_value_change(refresh_item_list)
-    bld_search.on_value_change(refresh_item_list)
+    cat_filter.on_value_change(refresh_shop)
+    tier_filter.on_value_change(refresh_shop)
+    sort_select.on_value_change(refresh_shop)
+    bld_search.on_value_change(refresh_shop)
     bld_hero.on_value_change(update_results)
     bld_boons.on_value_change(update_results)
     bld_acc.on_value_change(update_results)
 
-    refresh_item_list()
+    refresh_shop()
     refresh_build_display()
     update_results()
 
@@ -724,7 +1117,6 @@ def _build_eval_tab() -> None:
 
 def _build_optimizer_tab() -> None:
     with ui.row().classes("w-full gap-6"):
-        # Left: inputs
         with ui.column().classes("w-80 gap-2"):
             ui.label("Hero").classes("text-amber-400 font-bold")
             opt_hero = ui.select(options=_hero_names, value=_hero_names[0] if _hero_names else "", label="Hero").classes("w-52")
@@ -738,7 +1130,6 @@ def _build_optimizer_tab() -> None:
             ui.separator()
             ui.button("Optimize for Max DPS", on_click=lambda: on_optimize()).classes("w-full")
 
-        # Right: results
         with ui.column().classes("flex-grow"):
             ui.label("Optimizer Results").classes("text-sky-400 font-bold")
             ui.separator()
@@ -766,27 +1157,17 @@ def _build_optimizer_tab() -> None:
                 f"Budget: {budget} | Spent: {build.total_cost} | Items: {len(build.items)}"
             ).classes("text-gray-400")
 
-            # Item list
+            # Show optimal items with icons
             ui.label("Optimal Items").classes("text-amber-400 font-bold mt-2")
-            item_rows = []
-            for i, item in enumerate(build.items, 1):
-                item_rows.append({
-                    "num": i,
-                    "item": item.name,
-                    "category": item.category.title(),
-                    "tier": f"T{item.tier}",
-                    "cost": item.cost,
-                })
-            item_columns = [
-                {"name": "num", "label": "#", "field": "num", "align": "left"},
-                {"name": "item", "label": "Item", "field": "item", "align": "left"},
-                {"name": "category", "label": "Category", "field": "category", "align": "left"},
-                {"name": "tier", "label": "Tier", "field": "tier", "align": "left"},
-                {"name": "cost", "label": "Cost", "field": "cost", "align": "left"},
-            ]
-            ui.table(columns=item_columns, rows=item_rows, row_key="num").classes("w-full max-w-2xl").props("dense flat bordered")
+            with ui.element("div").style("display: flex; flex-wrap: wrap; gap: 4px;"):
+                for item in build.items:
+                    colors = _CAT_COLORS.get(item.category, _CAT_COLORS["weapon"])
+                    with ui.element("div").classes("build-item-chip").style(
+                        f"background: {colors['bg']}; border: 1px solid {colors['border']};"
+                    ):
+                        ui.image(_item_image_url(item)).style("width: 28px; height: 28px; object-fit: contain;")
+                        ui.label(f"{item.name} ({item.cost})").style(f"color: {colors['text']}; font-size: 12px;")
 
-            # DPS results
             if result.bullet_result:
                 br = result.bullet_result
                 ui.label("DPS Output").classes("text-green-400 font-bold mt-4")
@@ -818,9 +1199,16 @@ def run_gui() -> None:
     _items = load_items()
     _item_names = sorted(_items.keys())
 
+    # Serve item images and UI icons as static files
+    data_dir = Path(__file__).resolve().parent.parent.parent / "data" / "images"
+    app.add_static_files("/static/items", str(data_dir / "items"))
+    app.add_static_files("/static/ui", str(data_dir / "ui"))
+
     @ui.page("/")
     def index():
         ui.dark_mode(True)
+        ui.add_css(_CUSTOM_CSS)
+
         ui.label("DEADLOCK COMBAT SIMULATOR").classes("text-2xl font-bold text-amber-400")
         ui.label(f"{len(_heroes)} heroes, {len(_items)} items loaded").classes("text-gray-500")
         ui.separator()
