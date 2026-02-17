@@ -6,10 +6,43 @@ from dataclasses import dataclass, field
 
 
 @dataclass
+class AbilityUpgrade:
+    """An upgrade tier for a hero ability (T1/T2/T3)."""
+
+    tier: int = 0
+    description: str = ""
+
+
+@dataclass
+class HeroAbility:
+    """A hero ability with its properties and upgrades."""
+
+    name: str = ""
+    class_name: str = ""
+    ability_type: str = ""  # innate, signature, ultimate, weapon
+    description: str = ""
+    image_url: str = ""
+    cooldown: float = 0.0
+    duration: float = 0.0
+    base_damage: float = 0.0
+    spirit_scaling: float = 0.0  # spirit power coefficient
+
+    # Upgrades (T1, T2, T3 descriptions)
+    upgrades: list[AbilityUpgrade] = field(default_factory=list)
+
+    # All raw properties from the API
+    properties: dict = field(default_factory=dict)
+
+
+@dataclass
 class HeroStats:
     """Base stats for a Deadlock hero, loaded from data."""
 
     name: str
+
+    # API identifiers
+    hero_id: int = 0
+    class_name: str = ""
 
     # Gun stats
     base_bullet_damage: float = 0.0
@@ -44,6 +77,28 @@ class HeroStats:
 
     # Hero Labs flag
     hero_labs: bool = False
+
+    # Images from the API
+    icon_url: str = ""
+    hero_card_url: str = ""
+    minimap_url: str = ""
+
+    # Hero description/lore
+    lore: str = ""
+    role: str = ""
+    playstyle: str = ""
+
+    # Abilities
+    abilities: list[HeroAbility] = field(default_factory=list)
+
+    # Weapon class name reference
+    weapon_class_name: str = ""
+
+    # Reload duration
+    reload_duration: float = 0.0
+
+    # Cycle time (for DPS calculations)
+    cycle_time: float = 0.0
 
 
 @dataclass
@@ -83,6 +138,9 @@ class AbilityConfig:
     base_damage: float = 0.0
     spirit_multiplier: float = 0.0
     current_spirit: int = 0
+
+    # Cooldown
+    cooldown: float = 0.0
 
     # Duration for DoT abilities
     ability_duration: float = 0.0
@@ -132,7 +190,7 @@ class SpiritResult:
     raw_damage: float  # base + spirit scaling
     modified_damage: float  # after resist/amp
     spirit_contribution: float  # the spirit portion alone
-    dps: float  # if DoT, damage / duration
+    dps: float  # if DoT, damage / duration; if instant, damage / cooldown
     total_dot_damage: float  # if DoT, over full duration
 
 
@@ -171,6 +229,13 @@ class Item:
     tier: int  # 1-4
     cost: int
 
+    # API identifiers
+    item_id: int = 0
+    class_name: str = ""
+    image_url: str = ""
+    description: str = ""
+    is_active: bool = False
+
     # Combat stats (all default to 0 if not present on the item)
     weapon_damage_pct: float = 0.0
     fire_rate_pct: float = 0.0
@@ -195,6 +260,9 @@ class Item:
 
     # Optional condition describing when the stat applies
     condition: str = ""
+
+    # All raw properties from the API
+    raw_properties: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -246,4 +314,6 @@ class BuildResult:
     build_stats: BuildStats
     bullet_result: BulletResult | None = None
     ttk_result: TTKResult | None = None
+    spirit_dps: float = 0.0
+    combined_dps: float = 0.0
     effective_hp: float = 0.0

@@ -12,6 +12,7 @@ from ..models import (
     AbilityConfig,
     BulletResult,
     CombatConfig,
+    HeroAbility,
     HeroStats,
     SpiritResult,
 )
@@ -182,3 +183,79 @@ class DamageCalculator:
             * (config.headshot_multiplier - 1.0)
         )
         return base_hit_dps + headshot_bonus
+
+    @classmethod
+    def calculate_ability_spirit_dps(
+        cls,
+        ability: HeroAbility,
+        current_spirit: int = 0,
+        cooldown_reduction: float = 0.0,
+        spirit_amp: float = 0.0,
+        enemy_spirit_resist: float = 0.0,
+        resist_shred: float = 0.0,
+    ) -> SpiritResult:
+        """Calculate spirit DPS for a specific hero ability.
+
+        Uses the ability's base damage, spirit scaling, cooldown, and duration
+        to compute DPS including spirit power contributions.
+        """
+        # Effective cooldown with CDR
+        effective_cooldown = ability.cooldown * (1.0 - cooldown_reduction)
+        if effective_cooldown < 0.1:
+            effective_cooldown = 0.1
+
+        config = AbilityConfig(
+            base_damage=ability.base_damage,
+            spirit_multiplier=ability.spirit_scaling,
+            current_spirit=current_spirit,
+            cooldown=effective_cooldown,
+            ability_duration=ability.duration,
+            enemy_spirit_resist=enemy_spirit_resist,
+            resist_shred=resist_shred,
+            spirit_amp=spirit_amp,
+        )
+        result = cls.calculate_spirit(config)
+
+        # If the ability has a cooldown and is instant (no DoT duration),
+        # DPS = damage / cooldown
+        if ability.cooldown > 0 and ability.duration == 0:
+            cd_dps = result.modified_damage / effective_cooldown
+            return SpiritResult(
+                raw_damage=result.raw_damage,
+                modified_damage=result.modified_damage,
+                spirit_contribution=result.spirit_contribution,
+                dps=cd_dps,
+                total_dot_damage=result.total_dot_damage,
+            )
+
+        return result
+
+    @classmethod
+    def hero_total_spirit_dps(
+        cls,
+        hero: HeroStats,
+        current_spirit: int = 0,
+        cooldown_reduction: float = 0.0,
+        spirit_amp: float = 0.0,
+        enemy_spirit_resist: float = 0.0,
+        resist_shred: float = 0.0,
+    ) -> float:
+        """Calculate total spirit DPS from all of a hero's damaging abilities.
+
+        Sums the DPS contributions of all abilities that deal damage,
+        accounting for cooldowns, spirit scaling, and resist.
+        """
+        total_dps = 0.0
+        for ability in hero.abilities:
+            if ability.base_damage <= 0:
+                continue
+            result = cls.calculate_ability_spirit_dps(
+                ability,
+                current_spirit=current_spirit,
+                cooldown_reduction=cooldown_reduction,
+                spirit_amp=spirit_amp,
+                enemy_spirit_resist=enemy_spirit_resist,
+                resist_shred=resist_shred,
+            )
+            total_dps += result.dps
+        return total_dps
