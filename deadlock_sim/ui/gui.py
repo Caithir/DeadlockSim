@@ -1107,9 +1107,11 @@ def _build_eval_tab() -> None:
     bld_boons.on_value_change(update_results)
     bld_acc.on_value_change(update_results)
 
-    refresh_shop()
     refresh_build_display()
     update_results()
+
+    # Return refresh_shop so the caller can trigger it lazily on first tab activation
+    return refresh_shop
 
 
 # ── Tab: Build Optimizer ────────────────────────────────────────
@@ -1224,7 +1226,7 @@ def run_gui() -> None:
             tab_build = ui.tab("Build")
             tab_opt = ui.tab("Optimizer")
 
-        with ui.tab_panels(tabs, value=tab_hero).classes("w-full"):
+        with ui.tab_panels(tabs, value=tab_hero).classes("w-full") as panels:
             with ui.tab_panel(tab_hero):
                 _build_hero_stats_tab()
             with ui.tab_panel(tab_bullet):
@@ -1240,11 +1242,22 @@ def run_gui() -> None:
             with ui.tab_panel(tab_rank):
                 _build_rankings_tab()
             with ui.tab_panel(tab_build):
-                _build_eval_tab()
+                _build_refresh_shop = _build_eval_tab()
             with ui.tab_panel(tab_opt):
                 _build_optimizer_tab()
 
-    ui.run(title="Deadlock Combat Simulator", port=8080, show=False)
+        # Lazy-load the item shop only when the Build tab is first activated
+        _shop_loaded = False
+
+        def _on_tab_change(e):
+            nonlocal _shop_loaded
+            if e.value == "Build" and not _shop_loaded:
+                _shop_loaded = True
+                _build_refresh_shop()
+
+        panels.on_value_change(_on_tab_change)
+
+    ui.run(title="Deadlock Combat Simulator", port=8080, show=False, reconnect_timeout=30.0)
 
 
 if __name__ in {"__main__", "__mp_main__"}:
