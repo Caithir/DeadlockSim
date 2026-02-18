@@ -314,21 +314,6 @@ _CUSTOM_CSS = """
     object-fit: contain;
     filter: brightness(1.1);
 }
-.item-tooltip {
-    display: none;
-    position: absolute;
-    bottom: 72px; left: 0;
-    transform: none;
-    min-width: 220px; max-width: 300px;
-    padding: 10px 14px;
-    border-radius: 8px;
-    z-index: 9999;
-    pointer-events: none;
-    white-space: nowrap;
-}
-.item-icon-btn:hover .item-tooltip {
-    display: block;
-}
 .tooltip-name {
     font-weight: bold; font-size: 14px;
     margin-bottom: 4px;
@@ -382,26 +367,29 @@ def _render_item_icon(item: Item, on_click_fn) -> None:
     colors = _CAT_COLORS.get(item.category, _CAT_COLORS["weapon"])
     stat_lines = _item_stat_lines(item)
 
-    stat_html = ""
-    for line in stat_lines:
-        if line.startswith("Condition:"):
-            stat_html += f'<div class="tooltip-condition">{line}</div>'
-        else:
-            stat_html += f'<div class="tooltip-stat">{line}</div>'
-
-    tooltip_html = f"""
-        <div class="item-tooltip" style="background: {colors['bg']}; border: 1px solid {colors['border']};">
-            <div class="tooltip-name" style="color: {colors['text']};">{item.name}</div>
-            <div class="tooltip-cost">T{item.tier} - {item.cost} Souls</div>
-            {stat_html}
-        </div>
-    """
+    stat_html = "".join(
+        f'<div class="tooltip-condition">{line}</div>'
+        if line.startswith("Condition:")
+        else f'<div class="tooltip-stat">{line}</div>'
+        for line in stat_lines
+    )
+    tooltip_inner = (
+        f'<div style="min-width:200px;max-width:280px;">'
+        f'<div class="tooltip-name" style="color:{colors["text"]};">{item.name}</div>'
+        f'<div class="tooltip-cost">T{item.tier} — {item.cost} Souls</div>'
+        f'{stat_html}'
+        f'</div>'
+    )
 
     with ui.element("div").classes("item-icon-btn").style(
         f"background: {colors['bg']}; border: 2px solid {colors['border']};"
     ).on("click", lambda _, it=item: on_click_fn(it)):
         ui.image(_item_image_url(item)).style("width: 48px; height: 48px; object-fit: contain;")
-        ui.html(tooltip_html)
+        with ui.tooltip().style(
+            f"background:{colors['bg']}; border:1px solid {colors['border']}; "
+            "padding:10px 14px; border-radius:8px; font-size:13px;"
+        ):
+            ui.html(tooltip_inner)
 
 
 # ── Tab: Heroes (Abilities + Images + Upgrades) ───────────────────
