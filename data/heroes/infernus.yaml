@@ -22,10 +22,8 @@ hero_labs: false
 
 abilities:
   - name: Afterburn
-...
     ability_type: innate
     description: Infernus's bullets apply a burning DoT effect that deals damage over time.
-...
     cooldown: 0
     duration: 3
     base_damage: 15
@@ -33,18 +31,13 @@ abilities:
     upgrades:
       - tier: 1
         description: +5/s burn damage
-...
       - tier: 2
         description: +1s burn duration
-...
       - tier: 3
         description: Burn spreads to nearby enemies on death
-...
   - name: Concussive Combustion
-...
     ability_type: active
     description: Ignites nearby enemies in an area, dealing damage and launching them into the air.
-...
     cooldown: 20
     duration: 0
     base_damage: 120
@@ -52,18 +45,13 @@ abilities:
     upgrades:
       - tier: 1
         description: +60 damage
-...
       - tier: 2
         description: Increased blast radius
-...
       - tier: 3
         description: Enemies launched further and stunned on landing
-...
   - name: Catalyst
-...
     ability_type: active
     description: Applies a fire catalyst to an enemy. Fire damage they take is amplified.
-...
     cooldown: 16
     duration: 5
     base_damage: 0
@@ -71,19 +59,13 @@ abilities:
     upgrades:
       - tier: 1
         description: +20% damage amplification
-...
       - tier: 2
         description: +2s duration
-...
       - tier: 3
         description: Catalyst spreads to nearby allies of the target on their death
-...
   - name: Flame Dash
-...
     ability_type: ultimate
-    description: Infernus transforms into living fire and rockets forward, dealing massive damage to
-  all enemies in the path.
-...
+    description: Infernus transforms into living fire and rockets forward, dealing massive damage to all enemies in the path.
     cooldown: 100
     duration: 0
     base_damage: 300
@@ -91,10 +73,7 @@ abilities:
     upgrades:
       - tier: 1
         description: +100 damage
-...
       - tier: 2
         description: Dash distance increased by 40%
-...
       - tier: 3
         description: Leaves a trail of fire that persists for 5s
-...

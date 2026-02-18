@@ -26,10 +26,8 @@ spirit_scaling:
 
 abilities:
   - name: Crow Familiar
-...
     ability_type: innate
     description: Vindicta's crow periodically dives at the nearest enemy hero, dealing damage.
-...
     cooldown: 15
     duration: 0
     base_damage: 50
@@ -37,18 +35,13 @@ abilities:
     upgrades:
       - tier: 1
         description: -5s cooldown
-...
       - tier: 2
         description: +30 damage
-...
       - tier: 3
         description: Crow carries a debuff that reduces enemy bullet resist
-...
   - name: Stake
-...
     ability_type: active
     description: Vindicta impales a targeted enemy with a stake, pinning them in place briefly.
-...
     cooldown: 20
     duration: 2
     base_damage: 80
@@ -56,18 +49,13 @@ abilities:
     upgrades:
       - tier: 1
         description: +1s pin duration
-...
       - tier: 2
         description: +50 damage
-...
       - tier: 3
         description: Stake shatters on expiry, damaging nearby enemies
-...
   - name: Assassinate
-...
     ability_type: active
     description: Vindicta charges up and fires a devastating long-range sniper shot.
-...
     cooldown: 30
     duration: 0
     base_damage: 280
@@ -75,19 +63,13 @@ abilities:
     upgrades:
       - tier: 1
         description: +80 damage
-...
       - tier: 2
         description: Charge time reduced by 30%
-...
       - tier: 3
         description: Headshot multiplier increased by 50%
-...
   - name: Flight
-...
     ability_type: ultimate
-    description: Vindicta takes to the skies, gaining unobstructed aerial mobility and enhanced sniper
-  capabilities.
-...
+    description: Vindicta takes to the skies, gaining unobstructed aerial mobility and enhanced sniper capabilities.
     cooldown: 90
     duration: 10
     base_damage: 30
@@ -95,10 +77,7 @@ abilities:
     upgrades:
       - tier: 1
         description: +5s duration
-...
       - tier: 2
         description: Flight movement speed increased by 30%
-...
       - tier: 3
         description: Rockets periodically rain down on enemies below while airborne
-...

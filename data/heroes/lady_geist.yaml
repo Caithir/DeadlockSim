@@ -22,10 +22,8 @@ hero_labs: false
 
 abilities:
   - name: Essence Bomb
-...
     ability_type: active
     description: Throws a bomb that detonates, sacrificing some of Lady Geist's HP to amplify its damage.
-...
     cooldown: 14
     duration: 0
     base_damage: 100
@@ -33,18 +31,13 @@ abilities:
     upgrades:
       - tier: 1
         description: +60 damage
-...
       - tier: 2
         description: HP cost reduced by 40%
-...
       - tier: 3
         description: Bomb splits into 3 smaller projectiles on impact
-...
   - name: Life Drain
-...
     ability_type: active
     description: Channels a beam that continuously drains life from an enemy, healing Lady Geist.
-...
     cooldown: 22
     duration: 3
     base_damage: 100
@@ -52,18 +45,13 @@ abilities:
     upgrades:
       - tier: 1
         description: +1s channel duration
-...
       - tier: 2
         description: +30/s damage and healing
-...
       - tier: 3
         description: Also drains movement speed from the target
-...
   - name: Soul Release
-...
     ability_type: active
     description: Releases a spirit projectile that seeks and damages the nearest enemy hero.
-...
     cooldown: 18
     duration: 0
     base_damage: 150
@@ -71,19 +59,13 @@ abilities:
     upgrades:
       - tier: 1
         description: +50 damage
-...
       - tier: 2
         description: Soul chains to 1 additional nearby target
-...
       - tier: 3
         description: Soul applies a 2s stun on impact
-...
   - name: Malice
-...
     ability_type: ultimate
-    description: Connects Lady Geist to multiple enemies. Damage dealt to any connected target is shared
-  among all.
-...
+    description: Connects Lady Geist to multiple enemies. Damage dealt to any connected target is shared among all.
     cooldown: 130
     duration: 5
     base_damage: 0
@@ -91,10 +73,7 @@ abilities:
     upgrades:
       - tier: 1
         description: +2s duration
-...
       - tier: 2
         description: Connects to 1 additional enemy
-...
       - tier: 3
         description: Connected enemies are slowed by 25%
-...

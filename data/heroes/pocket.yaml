@@ -22,11 +22,8 @@ hero_labs: false
 
 abilities:
   - name: Flying Cloak
-...
     ability_type: active
-    description: Pocket becomes ethereal and dashes forward, phasing through obstacles and dealing
-  damage.
-...
+    description: Pocket becomes ethereal and dashes forward, phasing through obstacles and dealing damage.
     cooldown: 16
     duration: 0
     base_damage: 60
@@ -34,18 +31,13 @@ abilities:
     upgrades:
       - tier: 1
         description: -4s cooldown
-...
       - tier: 2
         description: +1 charge
-...
       - tier: 3
         description: Cloak silences nearby enemies on cast
-...
   - name: Barrage
-...
     ability_type: active
     description: Pocket's magical tome summons a volley of arcane projectiles at a target location.
-...
     cooldown: 18
     duration: 0
     base_damage: 160
@@ -53,18 +45,13 @@ abilities:
     upgrades:
       - tier: 1
         description: +50 damage
-...
       - tier: 2
         description: +3 additional projectiles
-...
       - tier: 3
         description: Projectiles apply a 25% slow to hit targets
-...
   - name: Enchanter's Satchel
-...
     ability_type: active
     description: Tosses a magical satchel that deals damage and reduces the target's magic resistance.
-...
     cooldown: 14
     duration: 4
     base_damage: 80
@@ -72,18 +59,13 @@ abilities:
     upgrades:
       - tier: 1
         description: +30 damage
-...
       - tier: 2
         description: Resistance debuff duration increased
-...
       - tier: 3
         description: Satchel bounces to 2 additional nearby enemies
-...
   - name: Affliction
-...
     ability_type: ultimate
     description: Binds an enemy in dark magic, dealing massive damage over time and preventing healing.
-...
     cooldown: 130
     duration: 5
     base_damage: 120
@@ -91,10 +73,7 @@ abilities:
     upgrades:
       - tier: 1
         description: +2s duration
-...
       - tier: 2
         description: Affliction also slows the target by 30%
-...
       - tier: 3
         description: On expiry, affliction spreads to nearby enemies
-...

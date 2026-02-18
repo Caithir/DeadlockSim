@@ -22,10 +22,8 @@ hero_labs: false
 
 abilities:
   - name: Hyper Beam
-...
     ability_type: innate
     description: Bebop builds charges from kills. Each charge increases his laser beam damage.
-...
     cooldown: 0
     duration: 0
     base_damage: 40
@@ -33,18 +31,13 @@ abilities:
     upgrades:
       - tier: 1
         description: Faster charge gain
-...
       - tier: 2
         description: +20% damage per charge
-...
       - tier: 3
         description: Charges are retained on kills
-...
   - name: Hook
-...
     ability_type: active
     description: Fires a hook that grabs an enemy and pulls them to Bebop.
-...
     cooldown: 17
     duration: 0
     base_damage: 100
@@ -52,18 +45,13 @@ abilities:
     upgrades:
       - tier: 1
         description: +10m range
-...
       - tier: 2
         description: +75 damage
-...
       - tier: 3
         description: Stuns the target for 1s
-...
   - name: Sticky Bomb
-...
     ability_type: active
     description: Tosses a bomb that sticks to an enemy or surface and detonates after a delay.
-...
     cooldown: 12
     duration: 0
     base_damage: 130
@@ -71,18 +59,13 @@ abilities:
     upgrades:
       - tier: 1
         description: +25 damage
-...
       - tier: 2
         description: +1 charge
-...
       - tier: 3
         description: Explosion dazes nearby enemies
-...
   - name: Hyper Beam (Ultimate)
-...
     ability_type: ultimate
     description: Bebop charges up and unleashes a devastating continuous laser beam.
-...
     cooldown: 130
     duration: 4
     base_damage: 200
@@ -90,10 +73,7 @@ abilities:
     upgrades:
       - tier: 1
         description: +1s channel duration
-...
       - tier: 2
         description: Beam width greatly increased
-...
       - tier: 3
         description: Beam pulls enemies toward its center
-...

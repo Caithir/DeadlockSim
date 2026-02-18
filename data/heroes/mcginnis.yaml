@@ -22,10 +22,8 @@ hero_labs: false
 
 abilities:
   - name: Medicite Fabricator
-...
     ability_type: active
     description: Drops a healing canister that allies can pick up to restore HP.
-...
     cooldown: 25
     duration: 0
     base_damage: 0
@@ -33,18 +31,13 @@ abilities:
     upgrades:
       - tier: 1
         description: +50% healing amount
-...
       - tier: 2
         description: +1 canister deployed
-...
       - tier: 3
         description: Canisters also grant temporary bonus armor
-...
   - name: Heavy Barrage
-...
     ability_type: active
     description: Fires a barrage of rockets at a targeted location, dealing area damage.
-...
     cooldown: 24
     duration: 0
     base_damage: 200
@@ -52,18 +45,13 @@ abilities:
     upgrades:
       - tier: 1
         description: +80 damage
-...
       - tier: 2
         description: +3 additional rockets
-...
       - tier: 3
         description: Rockets apply an afterburn DoT on hit
-...
   - name: Mini Turret
-...
     ability_type: active
     description: Deploys a mini turret that automatically attacks nearby enemies.
-...
     cooldown: 20
     duration: 10
     base_damage: 30
@@ -71,18 +59,13 @@ abilities:
     upgrades:
       - tier: 1
         description: +5s turret duration
-...
       - tier: 2
         description: +15 damage/s per turret
-...
       - tier: 3
         description: Deploy 2 turrets simultaneously
-...
   - name: Spectral Wall
-...
     ability_type: ultimate
     description: Deploys a wall of spectral soldiers that block movement and automatically attack enemies.
-...
     cooldown: 120
     duration: 6
     base_damage: 80
@@ -90,10 +73,7 @@ abilities:
     upgrades:
       - tier: 1
         description: +2s duration
-...
       - tier: 2
         description: Spectral soldiers gain 50% more HP
-...
       - tier: 3
         description: Wall launches enemies that contact it into the air
-...

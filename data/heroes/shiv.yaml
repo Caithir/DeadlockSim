@@ -22,10 +22,8 @@ hero_labs: false
 
 abilities:
   - name: Bloodletting
-...
     ability_type: innate
     description: Shiv's attacks apply a bleed that deals damage over time and enhances his other abilities.
-...
     cooldown: 0
     duration: 3
     base_damage: 20
@@ -33,18 +31,13 @@ abilities:
     upgrades:
       - tier: 1
         description: +8/s bleed damage
-...
       - tier: 2
         description: +1s bleed duration
-...
       - tier: 3
         description: Bleed also reduces target movement speed by 20%
-...
   - name: Serrated Knives
-...
     ability_type: active
     description: Shiv throws a fan of spinning knives at enemies ahead.
-...
     cooldown: 14
     duration: 0
     base_damage: 100
@@ -52,18 +45,13 @@ abilities:
     upgrades:
       - tier: 1
         description: +40 damage
-...
       - tier: 2
         description: +2 additional knives
-...
       - tier: 3
         description: Knives apply bleed on hit
-...
   - name: Slice and Dice
-...
     ability_type: active
     description: Shiv rapidly slashes all nearby enemies multiple times in quick succession.
-...
     cooldown: 18
     duration: 1.5
     base_damage: 60
@@ -71,18 +59,13 @@ abilities:
     upgrades:
       - tier: 1
         description: +30 damage per slash
-...
       - tier: 2
         description: +1 additional slash
-...
       - tier: 3
         description: Final slash launches enemies into the air
-...
   - name: Killing Blow
-...
     ability_type: ultimate
     description: Shiv dashes to a target enemy and executes them with a devastating single strike.
-...
     cooldown: 120
     duration: 0
     base_damage: 500
@@ -90,10 +73,7 @@ abilities:
     upgrades:
       - tier: 1
         description: +150 damage
-...
       - tier: 2
         description: Heal for 30% of damage dealt
-...
       - tier: 3
         description: Cooldown resets on kill
-...

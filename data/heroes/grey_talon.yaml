@@ -29,10 +29,8 @@ spirit_scaling:
 
 abilities:
   - name: Guided Owl
-...
     ability_type: innate
     description: Periodically sends a homing owl spirit at the nearest enemy hero.
-...
     cooldown: 20
     duration: 0
     base_damage: 80
@@ -40,18 +38,13 @@ abilities:
     upgrades:
       - tier: 1
         description: -8s cooldown
-...
       - tier: 2
         description: +40 damage
-...
       - tier: 3
         description: Owl chains to 2 additional nearby enemies
-...
   - name: Charged Shot
-...
     ability_type: active
     description: Charges up and releases a powerful arrow that deals massive damage.
-...
     cooldown: 18
     duration: 0
     base_damage: 200
@@ -59,18 +52,13 @@ abilities:
     upgrades:
       - tier: 1
         description: +80 damage
-...
       - tier: 2
         description: Charge time reduced by 30%
-...
       - tier: 3
         description: Arrow pierces through all enemies in its path
-...
   - name: Rain of Arrows
-...
     ability_type: active
     description: Launches a barrage of arrows in an arc, covering a large area.
-...
     cooldown: 25
     duration: 0
     base_damage: 120
@@ -78,18 +66,13 @@ abilities:
     upgrades:
       - tier: 1
         description: +40 damage
-...
       - tier: 2
         description: +3 additional arrows
-...
       - tier: 3
         description: Arrows apply a 30% slow for 3s
-...
   - name: Partial Recall
-...
     ability_type: ultimate
     description: Teleports Grey Talon back in time to a previous position, restoring HP.
-...
     cooldown: 90
     duration: 0
     base_damage: 0
@@ -97,10 +80,7 @@ abilities:
     upgrades:
       - tier: 1
         description: -25s cooldown
-...
       - tier: 2
         description: Restores 50% more HP
-...
       - tier: 3
         description: Also resets all ability cooldowns on use
-...
