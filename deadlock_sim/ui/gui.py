@@ -491,9 +491,9 @@ def _build_heroes_tab() -> None:
                                         )
                                         ui.badge(atype).props(f"color={badge_color}")
 
-                                # Description
+                                # Description (API returns HTML markup)
                                 if ability.description:
-                                    ui.label(ability.description).classes(
+                                    ui.html(ability.description).classes(
                                         "text-gray-300 text-sm"
                                     )
 
