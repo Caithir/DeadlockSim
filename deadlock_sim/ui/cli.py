@@ -10,6 +10,7 @@ from __future__ import annotations
 import math
 import sys
 
+from ..api_client import ensure_data_available
 from ..data import load_heroes, load_items, load_shop_tiers
 from ..engine.builds import BuildEngine, BuildOptimizer
 from ..engine.comparison import ComparisonEngine
@@ -512,6 +513,7 @@ def run_cli() -> None:
     print("  Loading data...")
 
     try:
+        ensure_data_available()
         heroes = load_heroes()
         items_db = load_items()
     except Exception as e:

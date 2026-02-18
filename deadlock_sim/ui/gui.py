@@ -13,7 +13,7 @@ from pathlib import Path
 
 from nicegui import app, ui
 
-from ..api_client import refresh_all_data
+from ..api_client import ensure_data_available, refresh_all_data
 from ..data import load_heroes, load_items
 from ..engine.builds import BuildEngine, BuildOptimizer
 from ..engine.comparison import ComparisonEngine
@@ -1285,6 +1285,7 @@ def run_gui() -> None:
     """Launch the NiceGUI Deadlock simulator."""
     global _heroes, _hero_names, _items, _item_names
 
+    ensure_data_available()
     _heroes = load_heroes()
     _hero_names = sorted(_heroes.keys())
     _items = load_items()
