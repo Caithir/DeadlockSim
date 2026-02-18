@@ -19,3 +19,81 @@ scaling:
   hp_gain: 49.0
   spirit_gain: 1.1
 hero_labs: false
+
+abilities:
+  - name: Infernal Resilience
+...
+    ability_type: innate
+    description: Gains temporary bonus max HP from damage taken. Stacks decay after a delay.
+...
+    cooldown: 0
+    duration: 0
+    base_damage: 0
+    spirit_scaling: 0
+    upgrades:
+      - tier: 1
+        description: Increased max stacks
+...
+      - tier: 2
+        description: Reduced stack decay rate
+...
+      - tier: 3
+        description: Also regenerates HP equal to stack bonus
+...
+  - name: Siphon Life
+...
+    ability_type: active
+    description: Channels a beam that deals damage to an enemy and heals Abrams.
+...
+    cooldown: 22
+    duration: 4
+    base_damage: 75
+    spirit_scaling: 0.7
+    upgrades:
+      - tier: 1
+        description: +1.5s duration
+...
+      - tier: 2
+        description: Healing is amplified by 40%
+...
+      - tier: 3
+        description: Also applies a 30% slow
+...
+  - name: Shoulder Charge
+...
+    ability_type: active
+    description: Abrams charges forward, grabbing the first hero hit and slamming them into the ground.
+...
+    cooldown: 22
+    duration: 0
+    base_damage: 80
+    spirit_scaling: 0
+    upgrades:
+      - tier: 1
+        description: -5s cooldown
+...
+      - tier: 2
+        description: +70 damage
+...
+      - tier: 3
+        description: Hold duration increased by 1s
+...
+  - name: Seismic Impact
+...
+    ability_type: ultimate
+    description: Abrams leaps high into the air and crashes down, damaging and launching nearby enemies.
+...
+    cooldown: 110
+    duration: 0
+    base_damage: 250
+    spirit_scaling: 0.5
+    upgrades:
+      - tier: 1
+        description: -35s cooldown
+...
+      - tier: 2
+        description: +150 damage
+...
+      - tier: 3
+        description: Creates a shockwave on landing that dazes enemies
+...

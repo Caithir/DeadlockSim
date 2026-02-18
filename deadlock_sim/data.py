@@ -419,6 +419,27 @@ def _hero_from_yaml(data: dict) -> HeroStats:
     base_dps = base_dmg * pellets * fire_rate
     base_dpm = base_dmg * pellets * base_ammo
 
+    # Parse abilities if present in YAML
+    abilities = []
+    for ab in data.get("abilities", []):
+        upgrades = [
+            AbilityUpgrade(
+                tier=u.get("tier", i + 1),
+                description=u.get("description", ""),
+            )
+            for i, u in enumerate(ab.get("upgrades", []))
+        ]
+        abilities.append(HeroAbility(
+            name=ab.get("name", ""),
+            ability_type=ab.get("ability_type", ""),
+            description=ab.get("description", ""),
+            cooldown=float(ab.get("cooldown", 0.0)),
+            duration=float(ab.get("duration", 0.0)),
+            base_damage=float(ab.get("base_damage", 0.0)),
+            spirit_scaling=float(ab.get("spirit_scaling", 0.0)),
+            upgrades=upgrades,
+        ))
+
     return HeroStats(
         name=data["name"],
         base_bullet_damage=base_dmg,
@@ -440,6 +461,7 @@ def _hero_from_yaml(data: dict) -> HeroStats:
         damage_gain=scale.get("damage_gain", 0.0),
         hp_gain=scale.get("hp_gain", 0.0),
         spirit_gain=scale.get("spirit_gain", 0.0),
+        abilities=abilities,
     )
 
 

@@ -19,3 +19,81 @@ scaling:
   hp_gain: 58.0
   spirit_gain: 1.3
 hero_labs: false
+
+abilities:
+  - name: Arctic Beam
+...
+    ability_type: active
+    description: Fires a freezing beam that slows then completely freezes enemies caught in it.
+...
+    cooldown: 22
+    duration: 3
+    base_damage: 80
+    spirit_scaling: 0.6
+    upgrades:
+      - tier: 1
+        description: +1s channel duration
+...
+      - tier: 2
+        description: +20/s additional damage
+...
+      - tier: 3
+        description: Frozen enemies shatter on death, damaging nearby enemies
+...
+  - name: Frost Grenade
+...
+    ability_type: active
+    description: Throws a grenade that bursts into ice crystals, slowing nearby enemies.
+...
+    cooldown: 14
+    duration: 0
+    base_damage: 100
+    spirit_scaling: 0.4
+    upgrades:
+      - tier: 1
+        description: +40 damage
+...
+      - tier: 2
+        description: Increased explosion radius
+...
+      - tier: 3
+        description: Applies a 35% slow for 4s
+...
+  - name: Ice Path
+...
+    ability_type: active
+    description: Creates a path of ice that allies can slide on rapidly to move faster.
+...
+    cooldown: 20
+    duration: 5
+    base_damage: 0
+    spirit_scaling: 0
+    upgrades:
+      - tier: 1
+        description: +3s duration
+...
+      - tier: 2
+        description: Path deals 20 damage/s to enemies
+...
+      - tier: 3
+        description: Allies on the path gain 30% movement speed
+...
+  - name: Frozen Shelter
+...
+    ability_type: ultimate
+    description: Creates a large ice dome that heals allies inside while slowing and damaging enemies.
+...
+    cooldown: 120
+    duration: 6
+    base_damage: 80
+    spirit_scaling: 0.6
+    upgrades:
+      - tier: 1
+        description: +2s duration
+...
+      - tier: 2
+        description: Allies inside gain 4 HP/s regeneration
+...
+      - tier: 3
+        description: Dome also silences enemies inside
+...

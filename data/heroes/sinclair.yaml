@@ -23,3 +23,82 @@ spirit_scaling:
 - stat: movement speed
   ratio: 0.023
   bonus: 0.0
+
+abilities:
+  - name: Rabbit Hole
+...
+    ability_type: active
+    description: Sinclair creates a magical portal that allows allies to pass through a wall briefly.
+...
+    cooldown: 20
+    duration: 5
+    base_damage: 0
+    spirit_scaling: 0
+    upgrades:
+      - tier: 1
+        description: +2s portal duration
+...
+      - tier: 2
+        description: Portal is significantly larger
+...
+      - tier: 3
+        description: Allies exiting gain a 30% speed boost for 3s
+...
+  - name: Cut in Half
+...
+    ability_type: active
+    description: Sinclair splits a target with an illusory blade, dealing damage.
+...
+    cooldown: 16
+    duration: 0
+    base_damage: 130
+    spirit_scaling: 0.5
+    upgrades:
+      - tier: 1
+        description: +60 damage
+...
+      - tier: 2
+        description: Cut applies a 25% slow to the target
+...
+      - tier: 3
+        description: Cut bounces to 1 additional nearby enemy
+...
+  - name: Bewitch
+...
+    ability_type: active
+    description: Sinclair charms an enemy hero, causing them to briefly attack their own allies.
+...
+    cooldown: 28
+    duration: 2
+    base_damage: 0
+    spirit_scaling: 0
+    upgrades:
+      - tier: 1
+        description: +1s charm duration
+...
+      - tier: 2
+        description: Bewitched enemy deals 20% more damage to allies
+...
+      - tier: 3
+        description: Bewitch also disables the target's abilities
+...
+  - name: Grand Finale
+...
+    ability_type: ultimate
+    description: Sinclair performs a grand magical illusion that deals massive damage and confuses
+  all nearby enemies.
+...
+    cooldown: 130
+    duration: 0
+    base_damage: 250
+    spirit_scaling: 0.8
+    upgrades:
+      - tier: 1
+        description: +100 damage
+...
+      - tier: 2
+        description: Confusion duration increased by 2s
+...
+      - tier: 3
+        description: Illusions spawned continue to attack for 5s
+...

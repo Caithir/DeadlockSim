@@ -19,3 +19,81 @@ scaling:
   hp_gain: 39.0
   spirit_gain: 1.1
 hero_labs: false
+
+abilities:
+  - name: Experimental Upgrades
+...
+    ability_type: innate
+    description: Victor's weapons passively gain unique power upgrades as he deals damage.
+...
+    cooldown: 0
+    duration: 0
+    base_damage: 0
+    spirit_scaling: 0
+    upgrades:
+      - tier: 1
+        description: Faster upgrade progression
+...
+      - tier: 2
+        description: +10% maximum upgrade power
+...
+      - tier: 3
+        description: Upgrades decay 50% slower
+...
+  - name: Rocket Barrage
+...
+    ability_type: active
+    description: Fires a spread of experimental rockets that deal area damage.
+...
+    cooldown: 16
+    duration: 0
+    base_damage: 140
+    spirit_scaling: 0.3
+    upgrades:
+      - tier: 1
+        description: +50 damage
+...
+      - tier: 2
+        description: +3 additional rockets
+...
+      - tier: 3
+        description: Rockets leave a burning trail dealing 20/s DoT
+...
+  - name: Rage Suppressor
+...
+    ability_type: active
+    description: Fires a suppressor dart that silences and slows a targeted enemy.
+...
+    cooldown: 20
+    duration: 3
+    base_damage: 0
+    spirit_scaling: 0
+    upgrades:
+      - tier: 1
+        description: +1s silence duration
+...
+      - tier: 2
+        description: -8s cooldown
+...
+      - tier: 3
+        description: Dart also reduces all enemy resistances by 20%
+...
+  - name: Afterburner
+...
+    ability_type: ultimate
+    description: Victor activates his jetpack and flies while unleashing a hail of experimental bullets.
+...
+    cooldown: 120
+    duration: 6
+    base_damage: 60
+    spirit_scaling: 0
+    upgrades:
+      - tier: 1
+        description: +2s duration
+...
+      - tier: 2
+        description: Bullet damage increased by 25%
+...
+      - tier: 3
+        description: Victor also launches missiles during flight
+...

@@ -19,3 +19,81 @@ scaling:
   hp_gain: 37.0
   spirit_gain: 1.1
 hero_labs: false
+
+abilities:
+  - name: Nine Lives
+...
+    ability_type: innate
+    description: Once per respawn timer, Calico survives a killing blow, becoming briefly invulnerable.
+...
+    cooldown: 90
+    duration: 0
+    base_damage: 0
+    spirit_scaling: 0
+    upgrades:
+      - tier: 1
+        description: -30s cooldown
+...
+      - tier: 2
+        description: Heal for 200 HP on survival trigger
+...
+      - tier: 3
+        description: Gain 50% speed boost for 3s after surviving
+...
+  - name: Pounce
+...
+    ability_type: active
+    description: Calico pounces on a targeted enemy, dealing damage and briefly pinning them.
+...
+    cooldown: 16
+    duration: 1
+    base_damage: 100
+    spirit_scaling: 0.4
+    upgrades:
+      - tier: 1
+        description: +50 damage
+...
+      - tier: 2
+        description: -5s cooldown
+...
+      - tier: 3
+        description: Pounce applies a bleed on landing
+...
+  - name: Ricochet
+...
+    ability_type: active
+    description: Throws a spinning blade that bounces between multiple nearby enemies.
+...
+    cooldown: 14
+    duration: 0
+    base_damage: 90
+    spirit_scaling: 0.3
+    upgrades:
+      - tier: 1
+        description: +40 damage
+...
+      - tier: 2
+        description: +2 additional bounces
+...
+      - tier: 3
+        description: Blade returns to Calico after final bounce, dealing bonus damage
+...
+  - name: Predator Instincts
+...
+    ability_type: ultimate
+    description: Calico enters a predatory hunt mode with enhanced senses and attack capabilities.
+...
+    cooldown: 110
+    duration: 8
+    base_damage: 60
+    spirit_scaling: 0
+    upgrades:
+      - tier: 1
+        description: +3s hunt duration
+...
+      - tier: 2
+        description: +25 damage/s during hunt mode
+...
+      - tier: 3
+        description: All ability cooldowns reset on kill during hunt mode
+...

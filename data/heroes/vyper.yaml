@@ -23,3 +23,81 @@ spirit_scaling:
 - stat: movement speed
   ratio: 0.023
   bonus: 0.874
+
+abilities:
+  - name: Rough Rider
+...
+    ability_type: innate
+    description: Vyper gains stacking speed and damage bonuses while continuously moving.
+...
+    cooldown: 0
+    duration: 0
+    base_damage: 0
+    spirit_scaling: 0
+    upgrades:
+      - tier: 1
+        description: Stacks build 30% faster
+...
+      - tier: 2
+        description: +5% max damage bonus
+...
+      - tier: 3
+        description: Bonus also applies when airborne
+...
+  - name: Venom Spray
+...
+    ability_type: active
+    description: Sprays a cone of venom, dealing damage over time to enemies hit.
+...
+    cooldown: 14
+    duration: 4
+    base_damage: 40
+    spirit_scaling: 0.4
+    upgrades:
+      - tier: 1
+        description: +15/s venom damage
+...
+      - tier: 2
+        description: +2s duration
+...
+      - tier: 3
+        description: Venom blinds enemies briefly
+...
+  - name: Zig-Zag
+...
+    ability_type: active
+    description: Vyper rapidly dashes in multiple quick directions, dealing damage to enemies touched.
+...
+    cooldown: 18
+    duration: 0
+    base_damage: 80
+    spirit_scaling: 0
+    upgrades:
+      - tier: 1
+        description: +40 damage
+...
+      - tier: 2
+        description: +1 additional dash
+...
+      - tier: 3
+        description: Dashes leave afterimage clones that attack nearby enemies
+...
+  - name: Personal Space
+...
+    ability_type: ultimate
+    description: Vyper releases a massive radial pulse that launches and stuns all nearby enemies.
+...
+    cooldown: 120
+    duration: 0
+    base_damage: 200
+    spirit_scaling: 0.6
+    upgrades:
+      - tier: 1
+        description: +80 damage
+...
+      - tier: 2
+        description: Pulse radius greatly increased
+...
+      - tier: 3
+        description: Disarms launched enemies for 2s
+...

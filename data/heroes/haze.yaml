@@ -26,3 +26,82 @@ spirit_scaling:
 - stat: base damage
   ratio: 0.025
   bonus: 0.0
+
+abilities:
+  - name: Fixation
+...
+    ability_type: innate
+    description: Each bullet hit on the same target builds stacks, increasing damage dealt to that
+  target.
+...
+    cooldown: 0
+    duration: 0
+    base_damage: 0
+    spirit_scaling: 0
+    upgrades:
+      - tier: 1
+        description: +5% damage per stack
+...
+      - tier: 2
+        description: +3 maximum stacks
+...
+      - tier: 3
+        description: Stacks also apply a 20% slow
+...
+  - name: Smoke Bomb
+...
+    ability_type: active
+    description: Haze drops a smoke bomb and turns invisible for a short time.
+...
+    cooldown: 24
+    duration: 5
+    base_damage: 0
+    spirit_scaling: 0
+    upgrades:
+      - tier: 1
+        description: +2s invisibility duration
+...
+      - tier: 2
+        description: Movement speed increased while invisible
+...
+      - tier: 3
+        description: Smoke bomb silences nearby enemies
+...
+  - name: Sleep Dagger
+...
+    ability_type: active
+    description: Throws a dagger that puts the target to sleep briefly, pausing any DoT effects.
+...
+    cooldown: 20
+    duration: 0
+    base_damage: 80
+    spirit_scaling: 0.5
+    upgrades:
+      - tier: 1
+        description: +0.5s sleep duration
+...
+      - tier: 2
+        description: +60 damage on wake-up
+...
+      - tier: 3
+        description: Dagger chains to 2 additional nearby targets
+...
+  - name: Bullet Dance
+...
+    ability_type: ultimate
+    description: Haze rapidly fires in all directions, dealing massive damage to all nearby enemies.
+...
+    cooldown: 120
+    duration: 4
+    base_damage: 180
+    spirit_scaling: 0
+    upgrades:
+      - tier: 1
+        description: +1s duration
+...
+      - tier: 2
+        description: +40 DPS
+...
+      - tier: 3
+        description: Haze becomes untargetable during Bullet Dance
+...

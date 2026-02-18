@@ -19,3 +19,81 @@ scaling:
   hp_gain: 44.0
   spirit_gain: 1.2
 hero_labs: false
+
+abilities:
+  - name: Kudzu Bomb
+...
+    ability_type: active
+    description: Ivy lobs a bomb that erupts in vines on impact, rooting and damaging enemies.
+...
+    cooldown: 18
+    duration: 2
+    base_damage: 80
+    spirit_scaling: 0.5
+    upgrades:
+      - tier: 1
+        description: +1s root duration
+...
+      - tier: 2
+        description: +60 damage
+...
+      - tier: 3
+        description: Vines apply a 30% slow after root expires
+...
+  - name: Watcher's Covenant
+...
+    ability_type: active
+    description: Links Ivy to a nearby ally, sharing a portion of all incoming damage.
+...
+    cooldown: 25
+    duration: 6
+    base_damage: 0
+    spirit_scaling: 0
+    upgrades:
+      - tier: 1
+        description: +3s duration
+...
+      - tier: 2
+        description: Damage sharing increased from 30% to 50%
+...
+      - tier: 3
+        description: Also heals the ally for 3 HP/s while linked
+...
+  - name: Stone Form
+...
+    ability_type: active
+    description: Ivy transforms into an immobile stone statue, becoming highly resistant to all damage.
+...
+    cooldown: 30
+    duration: 3
+    base_damage: 0
+    spirit_scaling: 0
+    upgrades:
+      - tier: 1
+        description: +1s duration
+...
+      - tier: 2
+        description: Gain 3 HP/s while in stone form
+...
+      - tier: 3
+        description: Release a shockwave on exit that stuns nearby enemies
+...
+  - name: Air Drop
+...
+    ability_type: ultimate
+    description: Ivy grabs a nearby ally and throws them a great distance in a targeted direction.
+...
+    cooldown: 90
+    duration: 0
+    base_damage: 0
+    spirit_scaling: 0
+    upgrades:
+      - tier: 1
+        description: Increased throw range
+...
+      - tier: 2
+        description: Ally gains 40% movement speed boost on landing
+...
+      - tier: 3
+        description: Can use on self for a powerful escape
+...

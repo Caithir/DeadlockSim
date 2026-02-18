@@ -23,3 +23,82 @@ spirit_scaling:
 - stat: ammo (base)
   ratio: 0.15
   bonus: 5.7
+
+abilities:
+  - name: Power Slash
+...
+    ability_type: active
+    description: Yamato charges up and releases a powerful katana slash in a wide arc.
+...
+    cooldown: 16
+    duration: 0
+    base_damage: 200
+    spirit_scaling: 0.6
+    upgrades:
+      - tier: 1
+        description: +70 damage
+...
+      - tier: 2
+        description: Charge time reduced by 30%
+...
+      - tier: 3
+        description: Slash leaves a burning mark that deals 60/s DoT
+...
+  - name: Flying Strike
+...
+    ability_type: active
+    description: Yamato dashes forward with the katana drawn, piercing through all enemies in the path.
+...
+    cooldown: 20
+    duration: 0
+    base_damage: 140
+    spirit_scaling: 0.4
+    upgrades:
+      - tier: 1
+        description: +60 damage
+...
+      - tier: 2
+        description: Dash distance increased by 40%
+...
+      - tier: 3
+        description: Enemies hit are slowed by 30% for 3s
+...
+  - name: Crimson Slash
+...
+    ability_type: active
+    description: Yamato sends out a wave of blood-red energy that damages and heals her.
+...
+    cooldown: 18
+    duration: 0
+    base_damage: 120
+    spirit_scaling: 0.5
+    upgrades:
+      - tier: 1
+        description: +50 damage
+...
+      - tier: 2
+        description: Heals Yamato for 40% of damage dealt
+...
+      - tier: 3
+        description: Wave bounces off walls once
+...
+  - name: Shadow Transformation
+...
+    ability_type: ultimate
+    description: Yamato transforms into a shadow entity, becoming invulnerable and dealing AoE damage
+  around her.
+...
+    cooldown: 120
+    duration: 4
+    base_damage: 60
+    spirit_scaling: 0.7
+    upgrades:
+      - tier: 1
+        description: +2s duration
+...
+      - tier: 2
+        description: AoE damage increased by 50%
+...
+      - tier: 3
+        description: Movement speed greatly increased during transformation
+...

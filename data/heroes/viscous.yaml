@@ -19,3 +19,84 @@ scaling:
   hp_gain: 44.0
   spirit_gain: 1.3
 hero_labs: false
+
+abilities:
+  - name: Goo Ball
+...
+    ability_type: active
+    description: Viscous transforms into a bouncing ball of slime that rolls through enemies, dealing
+  damage.
+...
+    cooldown: 20
+    duration: 4
+    base_damage: 80
+    spirit_scaling: 0.4
+    upgrades:
+      - tier: 1
+        description: +30 damage
+...
+      - tier: 2
+        description: +1s duration
+...
+      - tier: 3
+        description: Ball explodes on exit dealing bonus AoE damage
+...
+  - name: Splatter
+...
+    ability_type: active
+    description: Viscous flings a large glob of slime that explodes on impact, slowing enemies caught
+  in it.
+...
+    cooldown: 12
+    duration: 0
+    base_damage: 120
+    spirit_scaling: 0.5
+    upgrades:
+      - tier: 1
+        description: +50 damage
+...
+      - tier: 2
+        description: Explosion radius increased
+...
+      - tier: 3
+        description: Slime slows targets by 35% for 3s
+...
+  - name: The Cube
+...
+    ability_type: active
+    description: Encases a targeted enemy or ally in a goo cube, making them invulnerable but immobile.
+...
+    cooldown: 25
+    duration: 3
+    base_damage: 0
+    spirit_scaling: 0
+    upgrades:
+      - tier: 1
+        description: +1s cube duration
+...
+      - tier: 2
+        description: Cube travels with Viscous while active
+...
+      - tier: 3
+        description: Target takes 150 damage when the cube expires
+...
+  - name: Puddle Punch
+...
+    ability_type: ultimate
+    description: Viscous becomes a massive slime puddle then unleashes a colossal punch in a target
+  direction.
+...
+    cooldown: 120
+    duration: 0
+    base_damage: 300
+    spirit_scaling: 0.8
+    upgrades:
+      - tier: 1
+        description: +100 damage
+...
+      - tier: 2
+        description: Punch launches enemies much further
+...
+      - tier: 3
+        description: Viscous absorbs incoming abilities while in puddle form
+...
