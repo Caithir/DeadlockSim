@@ -195,7 +195,7 @@ _CAT_COLORS = {
 
 _TIER_COSTS = {1: 500, 2: 1250, 3: 3000, 4: 6200}
 
-# Sort criteria available for items
+# Sort criteria available for items (static — no hero context needed)
 _SORT_OPTIONS = {
     "Cost": lambda item: item.cost,
     "Name": lambda item: item.name,
@@ -210,6 +210,15 @@ _SORT_OPTIONS = {
     "Bullet Shield": lambda item: -item.bullet_shield,
     "Bullet Shred %": lambda item: -item.bullet_resist_shred,
     "Cooldown Reduction %": lambda item: -item.cooldown_reduction,
+}
+
+# Impact sorts — computed per-hero/boon context; mapped to the score dict key
+_IMPACT_SORT_KEYS: dict[str, str] = {
+    "★ Gun DPS Δ":    "dps_delta",
+    "★ EHP Δ":        "ehp_delta",
+    "★ Spirit Power": "spirit_delta",
+    "★ DPS / Soul":   "dps_per_soul",
+    "★ EHP / Soul":   "ehp_per_soul",
 }
 
 
@@ -284,108 +293,230 @@ def _item_stat_lines(item: Item) -> list[str]:
 # ── Custom CSS ────────────────────────────────────────────────────
 
 _CUSTOM_CSS = """
-.item-icon-btn {
+/* ── Item card (shop) ───────────────────────────────────────── */
+.item-card {
     position: relative;
-    width: 64px; height: 64px;
-    border-radius: 6px;
+    width: 82px;
+    display: flex; flex-direction: column; align-items: center;
     cursor: pointer;
-    transition: transform 0.1s, box-shadow 0.1s;
-    padding: 0; margin: 2px;
-    display: flex; align-items: center; justify-content: center;
+    padding: 6px 4px 5px;
+    border-radius: 8px;
+    border: 2px solid transparent;
+    transition: transform 0.1s, border-color 0.1s, box-shadow 0.1s;
+    background: rgba(255,255,255,0.03);
     overflow: visible;
 }
-.item-icon-btn:hover {
-    transform: scale(1.15);
-    box-shadow: 0 0 12px rgba(255,255,255,0.3);
-    z-index: 100;
+.item-card:hover {
+    transform: translateY(-3px);
+    border-color: rgba(255,255,255,0.25);
+    box-shadow: 0 6px 16px rgba(0,0,0,0.5);
+    z-index: 200;
 }
-.item-icon-btn img {
-    width: 48px; height: 48px;
+.item-card img {
+    width: 58px; height: 58px;
     object-fit: contain;
-    filter: brightness(1.1);
+    filter: brightness(1.05);
 }
+.item-card-name {
+    font-size: 10px;
+    text-align: center;
+    line-height: 1.25;
+    margin-top: 4px;
+    color: #ccc;
+    max-width: 78px;
+    word-break: break-word;
+    hyphens: auto;
+}
+.item-card-badge {
+    position: absolute;
+    top: 3px; right: 3px;
+    font-size: 7px; font-weight: bold; letter-spacing: 0.02em;
+    padding: 1px 4px;
+    border-radius: 3px;
+    line-height: 1.4;
+    pointer-events: none;
+}
+.badge-active { background: #b86010; color: #ffe8c0; }
+.item-card-score {
+    font-size: 9px; font-weight: bold;
+    color: #7aff7a;
+    margin-top: 2px;
+    text-align: center;
+}
+
+/* ── Tooltip — appears to the right of the card ─────────────── */
 .item-tooltip {
     display: none;
     position: absolute;
-    bottom: 72px; left: 50%;
-    transform: translateX(-50%);
-    min-width: 220px; max-width: 300px;
+    top: -2px; left: 88px;
+    min-width: 210px; max-width: 270px;
     padding: 10px 14px;
     border-radius: 8px;
     z-index: 9999;
     pointer-events: none;
     white-space: nowrap;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.75);
 }
-.item-icon-btn:hover .item-tooltip {
-    display: block;
-}
+.item-card:hover .item-tooltip { display: block; }
 .tooltip-name {
-    font-weight: bold; font-size: 14px;
+    font-weight: bold; font-size: 13px;
     margin-bottom: 4px;
 }
-.tooltip-cost {
-    font-size: 12px; color: #e8c252;
-    margin-bottom: 6px;
-}
-.tooltip-stat {
-    font-size: 12px; color: #b0e8b0;
-    line-height: 1.5;
-}
+.tooltip-cost { font-size: 11px; color: #e8c252; margin-bottom: 5px; }
+.tooltip-stat { font-size: 11px; color: #b0e8b0; line-height: 1.5; }
 .tooltip-condition {
-    font-size: 11px; color: #ffb347;
+    font-size: 10px; color: #ffb347;
     font-style: italic; margin-top: 4px;
 }
-.tier-header {
-    font-size: 14px; font-weight: bold;
-    padding: 6px 12px;
-    border-radius: 4px;
-    margin: 8px 0 4px 0;
+
+/* ── Shop layout ─────────────────────────────────────────────── */
+.shop-card-grid {
+    display: flex; flex-wrap: wrap;
+    gap: 4px; padding: 4px 0;
+    align-items: flex-start;
 }
+/* keep old grid class for optimizer tab */
 .shop-grid {
     display: flex; flex-wrap: wrap;
     gap: 2px; padding: 4px;
     align-items: flex-start;
 }
+.tier-section {
+    margin: 6px 0; border-radius: 6px; overflow: visible;
+}
+.tier-label {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.08em;
+    padding: 4px 10px;
+    border-radius: 4px 4px 0 0;
+    display: inline-block;
+}
+
+/* ── Vertical category tabs ──────────────────────────────────── */
+.cat-vtab-bar {
+    display: flex; flex-direction: column;
+    gap: 3px;
+    padding: 8px 5px;
+    background: #0c0c0c;
+    border-right: 1px solid #1e1e1e;
+    min-width: 50px; align-items: center;
+}
+.cat-vtab {
+    width: 42px; height: 42px;
+    border-radius: 8px;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px;
+    border: 2px solid transparent;
+    transition: all 0.15s;
+    background: rgba(255,255,255,0.04);
+    user-select: none;
+}
+.cat-vtab:hover { background: rgba(255,255,255,0.1); }
+
+/* ── Build slot grid ─────────────────────────────────────────── */
+.build-slots-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 60px);
+    gap: 5px;
+    padding: 4px 0;
+}
+.build-slot-empty {
+    width: 60px; height: 60px;
+    border: 2px dashed #252525;
+    border-radius: 7px;
+    background: rgba(255,255,255,0.015);
+}
+.build-slot-filled {
+    position: relative;
+    width: 60px; height: 60px;
+    border-radius: 7px;
+    cursor: pointer;
+    border: 2px solid;
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden;
+    transition: filter 0.1s;
+}
+.build-slot-filled:hover { filter: brightness(1.35); }
+.build-slot-cost {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    background: rgba(0,0,0,0.75);
+    font-size: 9px; text-align: center;
+    padding: 1px 0; line-height: 1.25;
+    border-radius: 0 0 5px 5px;
+}
+
+/* ── Stat rows in results panel ──────────────────────────────── */
+.stat-row {
+    display: flex; align-items: baseline;
+    padding: 2px 0; gap: 6px;
+    font-size: 12px; border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+.stat-row-label { color: #888; flex: 1; }
+.stat-row-val   { color: #e8e8e8; font-variant-numeric: tabular-nums; min-width: 52px; text-align: right; }
+.stat-row-bonus { color: #7aff7a; font-size: 11px; min-width: 44px; text-align: right; }
+
+/* ── Legacy chip (optimizer tab) ─────────────────────────────── */
 .build-item-chip {
     display: flex; align-items: center;
     gap: 6px; padding: 4px 8px;
-    border-radius: 6px;
-    margin: 2px;
+    border-radius: 6px; margin: 2px;
 }
-.build-item-chip img {
-    width: 28px; height: 28px;
-    object-fit: contain;
-}
+.build-item-chip img { width: 28px; height: 28px; object-fit: contain; }
 .cat-tab { padding: 8px 20px; font-weight: bold; border-radius: 6px 6px 0 0; cursor: pointer; }
 .cat-tab-active { border-bottom: 3px solid; }
 """
 
 
-def _render_item_icon(item: Item, on_click_fn) -> None:
-    """Render a single item as an icon button with hover tooltip."""
+def _fmt_impact(val: float, sort_name: str, suffix: str) -> float | None:
+    """Convert a raw impact score to a display float for item card badges."""
+    if "Soul" in sort_name:
+        val = val * 1000  # convert per-soul → per-1000-souls
+    if abs(val) < 0.01:
+        return None
+    return val
+
+
+def _render_item_card(
+    item: Item,
+    on_click_fn,
+    score: float | None = None,
+    score_suffix: str = "",
+) -> None:
+    """Render a shop item as a card: icon + name + optional score badge + tooltip."""
     colors = _CAT_COLORS.get(item.category, _CAT_COLORS["weapon"])
     stat_lines = _item_stat_lines(item)
 
-    stat_html = ""
-    for line in stat_lines:
-        if line.startswith("Condition:"):
-            stat_html += f'<div class="tooltip-condition">{line}</div>'
-        else:
-            stat_html += f'<div class="tooltip-stat">{line}</div>'
+    stat_html = "".join(
+        f'<div class="tooltip-condition">{l}</div>'
+        if l.startswith("Condition:")
+        else f'<div class="tooltip-stat">{l}</div>'
+        for l in stat_lines
+    )
+    tooltip_html = (
+        f'<div class="item-tooltip"'
+        f' style="background:{colors["bg"]};border:1px solid {colors["border"]};">'
+        f'<div class="tooltip-name" style="color:{colors["text"]};">{item.name}</div>'
+        f'<div class="tooltip-cost">T{item.tier} — {item.cost} Souls</div>'
+        f'{stat_html}</div>'
+    )
 
-    tooltip_html = f"""
-        <div class="item-tooltip" style="background: {colors['bg']}; border: 1px solid {colors['border']};">
-            <div class="tooltip-name" style="color: {colors['text']};">{item.name}</div>
-            <div class="tooltip-cost">T{item.tier} - {item.cost} Souls</div>
-            {stat_html}
-        </div>
-    """
+    badge_html = '<div class="item-card-badge badge-active">ACTIVE</div>' if item.is_active else ""
 
-    with ui.element("div").classes("item-icon-btn").style(
-        f"background: {colors['bg']}; border: 2px solid {colors['border']};"
+    score_html = ""
+    if score is not None and abs(score) > 0.001:
+        sign = "+" if score > 0 else ""
+        score_html = f'<div class="item-card-score">{sign}{score:.1f}{score_suffix}</div>'
+
+    with ui.element("div").classes("item-card").style(
+        f"border-color:{colors['border']}; background:{colors['bg']};"
     ).on("click", lambda _, it=item: on_click_fn(it)):
-        ui.image(_item_image_url(item)).style("width: 48px; height: 48px; object-fit: contain;")
-        ui.html(tooltip_html)
+        ui.image(_item_image_url(item))
+        ui.html(badge_html + tooltip_html)
+        ui.element("div").classes("item-card-name").style(
+            f"color:{colors['text']};"
+        ).text = item.name
+        if score_html:
+            ui.html(score_html)
 
 
 # ── Tab: Hero Stats ──────────────────────────────────────────────
@@ -897,65 +1028,178 @@ def _build_rankings_tab() -> None:
     update()
 
 
-# ── Tab: Build Evaluator (shop-style) ───────────────────────────
+# ── Tab: Build Lab ────────────────────────────────────────────────
+
+_CAT_TAB_DEFS = [
+    # (value, emoji, label, border_color, active_bg, text_color)
+    ("all",      "✦", "All",      "#888888", "#444444", "#ffffff"),
+    ("weapon",   "⚙", "Weapon",   "#e8a838", "#3a2200", "#e8a838"),
+    ("vitality", "+", "Vitality", "#68b45c", "#0e2a08", "#68b45c"),
+    ("spirit",   "✸", "Spirit",   "#9b74d4", "#1a0d38", "#c090f0"),
+]
+
+_TIER_COSTS_LABEL = {1: "500", 2: "1,250", 3: "3,000", 4: "6,200"}
 
 
 def _build_eval_tab() -> None:
-    # ── Top bar: hero selection + build config
-    with ui.row().classes("w-full items-end gap-4"):
-        bld_hero = ui.select(options=_hero_names, value=_hero_names[0] if _hero_names else "", label="Hero").classes("w-48")
-        bld_boons = ui.number(label="Boons", value=0, min=0, max=50, step=1).classes("w-28")
-        bld_acc = ui.number(label="Accuracy %", value=50, min=0, max=100).classes("w-28")
+    all_sort_options = list(_SORT_OPTIONS.keys()) + list(_IMPACT_SORT_KEYS.keys())
+    cat_state = {"value": "all"}   # mutable container for closure
+
+    # ── Top filter bar ────────────────────────────────────────────
+    with ui.row().classes("w-full items-end gap-3 flex-wrap pb-1"):
+        bld_hero = ui.select(
+            options=_hero_names,
+            value=_hero_names[0] if _hero_names else "",
+            label="Hero",
+        ).classes("w-48")
+        bld_boons = ui.number(label="Boons", value=0, min=0, max=50, step=1).classes("w-24")
+        bld_acc = ui.number(label="Accuracy %", value=50, min=0, max=100).classes("w-24")
+        ui.element("div").style("flex:1")  # spacer
+        tier_filter = ui.select(
+            options=["All Tiers", "T1", "T2", "T3", "T4"],
+            value="All Tiers", label="Tier",
+        ).classes("w-28")
+        sort_select = ui.select(
+            options=all_sort_options,
+            value="Cost", label="Sort By",
+        ).classes("w-48")
+        bld_search = ui.input(label="Search", placeholder="item name...").classes("w-36")
 
     ui.separator()
 
-    with ui.row().classes("w-full gap-4"):
-        # ── LEFT: Item Shop ──
-        with ui.column().classes("flex-grow"):
-            # Category tabs + filter controls
-            with ui.row().classes("w-full items-center gap-3 flex-wrap"):
-                cat_filter = ui.select(
-                    options=["All", "Weapon", "Vitality", "Spirit"],
-                    value="All", label="Category",
-                ).classes("w-32")
-                tier_filter = ui.select(
-                    options=["All Tiers", "T1", "T2", "T3", "T4"],
-                    value="All Tiers", label="Tier",
-                ).classes("w-28")
-                sort_select = ui.select(
-                    options=list(_SORT_OPTIONS.keys()),
-                    value="Cost", label="Sort By",
-                ).classes("w-40")
-                bld_search = ui.input(label="Search", placeholder="Filter items...").classes("w-40")
+    # ── Main two-column layout ────────────────────────────────────
+    with ui.row().classes("w-full gap-0 items-start").style("min-height: 600px;"):
 
-            # Item icon grid area
-            shop_container = ui.scroll_area().classes("w-full border rounded").style(
-                "height: 420px; background: #1a1a2e;"
+        # ══ LEFT: Build panel ═════════════════════════════════════
+        with ui.column().style(
+            "width:300px; min-width:270px; padding:0 12px 0 0;"
+            "border-right:1px solid #1e1e1e;"
+        ):
+            ui.label("PURCHASED ITEMS & BONUSES").style(
+                "font-size:10px; font-weight:700; letter-spacing:0.1em;"
+                "color:#666; margin-bottom:6px;"
             )
 
-        # ── RIGHT: Build + Results ──
-        with ui.column().classes("w-96"):
-            ui.label("Current Build").classes("text-lg font-bold text-green-400")
-            build_display = ui.scroll_area().classes("w-full border rounded").style(
-                "height: 200px; background: #1a1a2e;"
-            )
-            with ui.row().classes("w-full gap-2"):
-                ui.button("Clear Build", on_click=lambda: clear_build()).classes("flex-grow")
+            # Build slot grid (4 columns)
+            build_grid = ui.element("div").classes("build-slots-grid")
 
-            ui.separator()
-            ui.label("Build Results").classes("text-lg font-bold text-sky-400")
-            bld_output = ui.scroll_area().classes("w-full").style(
-                "height: 300px;"
+            # Cost breakdown row
+            with ui.row().classes("w-full gap-3 mt-2"):
+                cost_weapon_lbl = ui.label("⚙ 0").style("color:#e8a838; font-size:12px; font-weight:600;")
+                cost_vit_lbl    = ui.label("+ 0").style("color:#68b45c; font-size:12px; font-weight:600;")
+                cost_spirit_lbl = ui.label("✸ 0").style("color:#9b74d4; font-size:12px; font-weight:600;")
+                ui.element("div").style("flex:1")
+                build_total_lbl = ui.label("$0").style("color:#e8c252; font-size:12px; font-weight:700;")
+
+            with ui.row().classes("w-full gap-2 mt-1"):
+                ui.button("Clear Items", on_click=lambda: clear_build()).props("dense flat").style(
+                    "font-size:11px; color:#ccc;"
+                )
+
+            ui.separator().style("margin:8px 0;")
+
+            # ── Calculated stats tabs ─────────────────────────────
+            ui.label("CALCULATED HERO STATS").style(
+                "font-size:10px; font-weight:700; letter-spacing:0.1em; color:#666;"
             )
+            with ui.tabs().classes("w-full").style("min-height:32px;") as stat_tabs:
+                stab_w = ui.tab("Weapon").style("color:#e8a838; font-size:12px; padding:4px 10px;")
+                stab_v = ui.tab("Vitality").style("color:#68b45c; font-size:12px; padding:4px 10px;")
+                stab_s = ui.tab("Spirit").style("color:#9b74d4; font-size:12px; padding:4px 10px;")
+
+            with ui.tab_panels(stat_tabs, value=stab_w).classes("w-full"):
+                with ui.tab_panel(stab_w):
+                    stats_weapon = ui.column().classes("w-full gap-0")
+                with ui.tab_panel(stab_v):
+                    stats_vitality = ui.column().classes("w-full gap-0")
+                with ui.tab_panel(stab_s):
+                    stats_spirit = ui.column().classes("w-full gap-0")
+
+        # ══ RIGHT: Vertical cat tabs + shop ═══════════════════════
+        with ui.row().classes("flex-grow gap-0 items-start").style("min-width:0;"):
+
+            # Vertical category tab strip
+            with ui.column().classes("cat-vtab-bar"):
+                tab_els: dict[str, object] = {}
+
+                def make_cat_handler(cat_val: str):
+                    def handler():
+                        cat_state["value"] = cat_val
+                        for cv, el in tab_els.items():
+                            _, _, _, border, active_bg, text = next(
+                                d for d in _CAT_TAB_DEFS if d[0] == cv
+                            )
+                            if cv == cat_val:
+                                el.style(
+                                    f"border-color:{border}; background:{active_bg};"
+                                    f"color:{text};"
+                                )
+                            else:
+                                el.style(
+                                    f"border-color:transparent; background:rgba(255,255,255,0.04);"
+                                    f"color:{border};"
+                                )
+                        refresh_shop()
+                    return handler
+
+                for cv, emoji, label, border, active_bg, text in _CAT_TAB_DEFS:
+                    init_border = border if cv == "all" else "transparent"
+                    init_bg     = active_bg if cv == "all" else "rgba(255,255,255,0.04)"
+                    el = (
+                        ui.element("div")
+                        .classes("cat-vtab")
+                        .style(f"border-color:{init_border}; background:{init_bg}; color:{text};")
+                        .on("click", make_cat_handler(cv))
+                    )
+                    with el:
+                        ui.element("span").style("pointer-events:none; font-size:17px;").text = emoji
+                    tab_els[cv] = el
+
+                    ui.tooltip(label).props("anchor='center right' self='center left'")
+
+            # Shop scroll area
+            shop_container = ui.scroll_area().classes("flex-grow border-l rounded-r").style(
+                "background:#0d0d16; height:640px; min-width:0;"
+            )
+
+    # ── Inner functions ───────────────────────────────────────────
+
+    def _compute_impact_scores(filtered_items: list) -> dict:
+        hero = _heroes.get(bld_hero.value)
+        if not hero:
+            return {}
+        boons_val = int(bld_boons.value or 0)
+        cur_build = Build(items=list(_build_items))
+        cur_stats = BuildEngine.aggregate_stats(cur_build)
+        cur_cfg   = BuildEngine.build_to_attacker_config(cur_stats, boons=boons_val)
+        cur_dps   = DamageCalculator.calculate_bullet(hero, cur_cfg).raw_dps
+        cur_ehp   = (hero.base_hp + hero.hp_gain * boons_val
+                     + cur_stats.bonus_hp + cur_stats.bullet_shield)
+        scores: dict = {}
+        for item in filtered_items:
+            t_stats = BuildEngine.aggregate_stats(Build(items=list(_build_items) + [item]))
+            t_cfg   = BuildEngine.build_to_attacker_config(t_stats, boons=boons_val)
+            dps_d   = DamageCalculator.calculate_bullet(hero, t_cfg).raw_dps - cur_dps
+            ehp_d   = (hero.base_hp + hero.hp_gain * boons_val
+                       + t_stats.bonus_hp + t_stats.bullet_shield) - cur_ehp
+            cost    = item.cost or 1
+            scores[item.name] = {
+                "dps_delta":    dps_d,
+                "ehp_delta":    ehp_d,
+                "spirit_delta": item.spirit_power,
+                "dps_per_soul": dps_d / cost,
+                "ehp_per_soul": ehp_d / cost,
+            }
+        return scores
 
     def refresh_shop(_=None):
-        cat = (cat_filter.value or "All").lower()
-        tier_str = tier_filter.value or "All Tiers"
-        search = (bld_search.value or "").lower().strip()
-        sort_key_name = sort_select.value or "Cost"
-        sort_fn = _SORT_OPTIONS.get(sort_key_name, _SORT_OPTIONS["Cost"])
+        cat       = cat_state["value"]
+        tier_str  = tier_filter.value or "All Tiers"
+        search    = (bld_search.value or "").lower().strip()
+        sort_name = sort_select.value or "Cost"
+        is_impact = sort_name in _IMPACT_SORT_KEYS
 
-        filtered = []
+        filtered: list = []
         for item in _items.values():
             if cat != "all" and item.category != cat:
                 continue
@@ -965,152 +1209,268 @@ def _build_eval_tab() -> None:
                 continue
             filtered.append(item)
 
-        filtered.sort(key=sort_fn)
+        # Compute scores / sort
+        scores: dict = {}
+        score_suffix = ""
+        if is_impact:
+            scores = _compute_impact_scores(filtered)
+            score_key = _IMPACT_SORT_KEYS[sort_name]
+            filtered.sort(key=lambda i: -scores.get(i.name, {}).get(score_key, 0))
+            if "Soul" in sort_name:
+                score_suffix = "/k"   # per-soul values are tiny; show as ×1000 below
+        else:
+            filtered.sort(key=_SORT_OPTIONS.get(sort_name, _SORT_OPTIONS["Cost"]))
 
         shop_container.clear()
-        with shop_container:
-            if sort_key_name == "Cost":
-                # Group by tier when sorting by cost (like in-game shop)
-                for tier in [1, 2, 3, 4]:
-                    tier_items = [i for i in filtered if i.tier == tier]
-                    if not tier_items:
-                        continue
+        use_tier_groups = (sort_name == "Cost" and not search)
 
-                    # Group within tier by category
-                    for cat_key in ["weapon", "vitality", "spirit"]:
-                        cat_items = [i for i in tier_items if i.category == cat_key]
-                        if not cat_items:
+        with shop_container:
+            with ui.element("div").style("padding:8px;"):
+                if use_tier_groups:
+                    for tier in [1, 2, 3, 4]:
+                        tier_items = [i for i in filtered if i.tier == tier]
+                        if not tier_items:
                             continue
-                        colors = _CAT_COLORS[cat_key]
+                        cost_lbl = _TIER_COSTS_LABEL.get(tier, "?")
+                        # Tier banner
                         with ui.element("div").style(
-                            f"background: {colors['bg']}; border-left: 3px solid {colors['border']}; "
-                            f"margin: 4px 0; padding: 4px 8px; border-radius: 4px;"
+                            "display:flex; align-items:center; gap:10px;"
+                            "margin:10px 0 4px; border-bottom:1px solid #2a2a3a; padding-bottom:4px;"
                         ):
-                            ui.label(
-                                f"{colors['label']} T{tier} - {tier_items[0].cost} Souls"
-                            ).style(f"color: {colors['text']}; font-size: 13px; font-weight: bold;")
-                            with ui.element("div").classes("shop-grid"):
-                                for item in cat_items:
-                                    _render_item_icon(item, add_item)
-            else:
-                # Flat grid for non-cost sorting
-                with ui.element("div").classes("shop-grid"):
-                    for item in filtered:
-                        _render_item_icon(item, add_item)
+                            ui.element("span").style(
+                                "font-size:11px; font-weight:700; letter-spacing:0.12em; color:#555;"
+                            ).text = f"TIER {tier}"
+                            ui.element("span").style(
+                                "font-size:12px; font-weight:700; color:#e8c252;"
+                            ).text = f"${cost_lbl}"
+
+                        # Items grouped by category within tier
+                        for cat_key in ["weapon", "vitality", "spirit"]:
+                            cat_items = [i for i in tier_items if i.category == cat_key]
+                            if not cat_items:
+                                continue
+                            colors = _CAT_COLORS[cat_key]
+                            with ui.element("div").style(
+                                f"border-left:3px solid {colors['border']};"
+                                f"background:{colors['bg']}; border-radius:0 6px 6px 0;"
+                                f"margin:3px 0; padding:4px 6px 6px;"
+                            ):
+                                ui.element("div").style(
+                                    f"font-size:10px; font-weight:700; color:{colors['text']};"
+                                    "letter-spacing:0.08em; margin-bottom:4px;"
+                                ).text = colors["label"].upper()
+                                with ui.element("div").classes("shop-card-grid"):
+                                    for item in cat_items:
+                                        sc = scores.get(item.name)
+                                        sv = _fmt_impact(
+                                            sc.get(_IMPACT_SORT_KEYS[sort_name], 0) if sc else 0,
+                                            sort_name, score_suffix
+                                        ) if (is_impact and sc) else None
+                                        _render_item_card(item, add_item, score=sv, score_suffix=score_suffix)
+                else:
+                    # Flat sorted grid with score badges
+                    with ui.element("div").classes("shop-card-grid"):
+                        for item in filtered:
+                            sc = scores.get(item.name)
+                            sv = _fmt_impact(
+                                sc.get(_IMPACT_SORT_KEYS[sort_name], 0) if sc else 0,
+                                sort_name, score_suffix
+                            ) if (is_impact and sc) else None
+                            _render_item_card(item, add_item, score=sv, score_suffix=score_suffix)
 
     def add_item(item: Item):
         _build_items.append(item)
         refresh_build_display()
         update_results()
+        if sort_select.value in _IMPACT_SORT_KEYS:
+            refresh_shop()
 
     def remove_item(idx: int):
         if 0 <= idx < len(_build_items):
             _build_items.pop(idx)
             refresh_build_display()
             update_results()
+            if sort_select.value in _IMPACT_SORT_KEYS:
+                refresh_shop()
 
     def clear_build():
         _build_items.clear()
         refresh_build_display()
         update_results()
+        if sort_select.value in _IMPACT_SORT_KEYS:
+            refresh_shop()
 
     def refresh_build_display():
-        build_display.clear()
-        total_cost = sum(item.cost for item in _build_items)
-        with build_display:
-            ui.label(f"{len(_build_items)} items | {total_cost} Souls").classes("text-gray-400 text-sm")
-            with ui.element("div").style("display: flex; flex-wrap: wrap; gap: 2px;"):
-                for i, item in enumerate(_build_items):
-                    colors = _CAT_COLORS.get(item.category, _CAT_COLORS["weapon"])
-                    with ui.element("div").classes("build-item-chip").style(
-                        f"background: {colors['bg']}; border: 1px solid {colors['border']}; cursor: pointer;"
-                    ).on("click", lambda _, idx=i: remove_item(idx)):
-                        ui.image(_item_image_url(item)).style("width: 28px; height: 28px; object-fit: contain;")
-                        ui.label(item.name).style(f"color: {colors['text']}; font-size: 12px;")
-                        ui.label("x").style("color: #ff6b6b; font-size: 11px; margin-left: 4px;")
+        build_grid.clear()
+        total = sum(i.cost for i in _build_items)
+        w_cost = sum(i.cost for i in _build_items if i.category == "weapon")
+        v_cost = sum(i.cost for i in _build_items if i.category == "vitality")
+        s_cost = sum(i.cost for i in _build_items if i.category == "spirit")
+
+        cost_weapon_lbl.text = f"⚙ {w_cost:,}"
+        cost_vit_lbl.text    = f"+ {v_cost:,}"
+        cost_spirit_lbl.text = f"✸ {s_cost:,}"
+        build_total_lbl.text = f"${total:,}"
+
+        with build_grid:
+            for i, item in enumerate(_build_items):
+                colors = _CAT_COLORS.get(item.category, _CAT_COLORS["weapon"])
+                with ui.element("div").classes("build-slot-filled").style(
+                    f"border-color:{colors['border']}; background:{colors['bg']};"
+                ).on("click", lambda _, idx=i: remove_item(idx)):
+                    ui.image(_item_image_url(item)).style(
+                        "width:48px; height:48px; object-fit:contain;"
+                    )
+                    ui.element("div").classes("build-slot-cost").style(
+                        f"color:{colors['text']};"
+                    ).text = f"{item.cost:,}"
+
+            # Empty placeholder slots (always show at least 8 total)
+            total_slots = max(8, len(_build_items) + 4)
+            # round up to multiple of 4
+            total_slots = ((total_slots + 3) // 4) * 4
+            for _ in range(total_slots - len(_build_items)):
+                ui.element("div").classes("build-slot-empty")
+
+    def _stat_row(container, label: str, base_val: str, bonus_val: str = ""):
+        with container:
+            with ui.element("div").classes("stat-row"):
+                ui.element("span").classes("stat-row-label").text = label
+                ui.element("span").classes("stat-row-val").text   = base_val
+                if bonus_val:
+                    ui.element("span").classes("stat-row-bonus").text = bonus_val
 
     def update_results(_=None):
         hero = _heroes.get(bld_hero.value)
-        bld_output.clear()
+        for panel in [stats_weapon, stats_vitality, stats_spirit]:
+            panel.clear()
         if not hero:
             return
 
-        build = Build(items=list(_build_items))
-        boons = int(bld_boons.value or 0)
-        accuracy = (bld_acc.value or 0) / 100.0
+        build   = Build(items=list(_build_items))
+        boons   = int(bld_boons.value or 0)
+        acc     = (bld_acc.value or 0) / 100.0
+        result  = BuildEngine.evaluate_build(hero, build, boons=boons, accuracy=acc, headshot_rate=0.15)
+        base_r  = BuildEngine.evaluate_build(hero, Build(), boons=boons, accuracy=acc, headshot_rate=0.15)
+        bs      = result.build_stats
+        br      = result.bullet_result
+        bbr     = base_r.bullet_result
 
-        result = BuildEngine.evaluate_build(
-            hero, build, boons=boons, accuracy=accuracy, headshot_rate=0.15,
-        )
+        def delta(val: float, base: float) -> str:
+            d = val - base
+            return f"+{d:.0f}" if d > 0.5 else ""
 
-        with bld_output:
-            bs = result.build_stats
+        def deltapct(val: float, base: float) -> str:
+            d = val - base
+            return f"+{d:.0%}" if abs(d) > 0.001 else ""
 
-            ui.label("Aggregated Stats").classes("text-amber-400 font-bold")
-            stat_rows = []
-            if bs.weapon_damage_pct:
-                stat_rows.append({"stat": "Weapon Damage", "value": f"+{bs.weapon_damage_pct:.0%}"})
-            if bs.fire_rate_pct:
-                stat_rows.append({"stat": "Fire Rate", "value": f"+{bs.fire_rate_pct:.0%}"})
-            if bs.ammo_flat:
-                stat_rows.append({"stat": "Ammo (flat)", "value": f"+{bs.ammo_flat}"})
-            if bs.ammo_pct:
-                stat_rows.append({"stat": "Ammo (%)", "value": f"+{bs.ammo_pct:.0%}"})
-            if bs.bonus_hp:
-                stat_rows.append({"stat": "Bonus HP", "value": f"+{bs.bonus_hp:.0f}"})
-            if bs.spirit_power:
-                stat_rows.append({"stat": "Spirit Power", "value": f"+{bs.spirit_power:.0f}"})
+        # ── Weapon tab ───────────────────────────────────────────
+        with stats_weapon:
+            if br and br.raw_dps > 0:
+                # DPS summary
+                with ui.element("div").style(
+                    "background:#1a2a1a; border:1px solid #2a4a2a; border-radius:8px;"
+                    "padding:8px 10px; margin-bottom:8px;"
+                    "display:grid; grid-template-columns:1fr 1fr 1fr; gap:4px; text-align:center;"
+                ):
+                    for lbl, val in [
+                        ("DPS",     f"{br.final_dps:.1f}"),
+                        ("Dmg/Mag", f"{br.damage_per_magazine:.0f}"),
+                        ("Mag",     f"{br.magazine_size}"),
+                    ]:
+                        with ui.element("div"):
+                            ui.element("div").style("font-size:9px; color:#68b45c; font-weight:700;").text = lbl
+                            ui.element("div").style("font-size:16px; color:#a0e890; font-weight:700;").text = val
+
+                _stat_row(stats_weapon, "Bullet Damage",
+                    f"{br.damage_per_bullet:.2f}",
+                    delta(br.damage_per_bullet, bbr.damage_per_bullet if bbr else 0))
+                _stat_row(stats_weapon, "Shots per Second",
+                    f"{br.bullets_per_second:.2f}")
+                _stat_row(stats_weapon, "Ammo",
+                    f"{br.magazine_size}",
+                    f"+{bs.ammo_flat}" if bs.ammo_flat else (f"+{bs.ammo_pct:.0%}" if bs.ammo_pct else ""))
+                _stat_row(stats_weapon, "Raw DPS",  f"{br.raw_dps:.1f}")
+                _stat_row(stats_weapon, "Final DPS", f"{br.final_dps:.1f}",
+                    delta(br.final_dps, bbr.final_dps if bbr else 0))
+                _stat_row(stats_weapon, "Dmg / Mag", f"{br.damage_per_magazine:.0f}")
+                _stat_row(stats_weapon, "Mag Time",
+                    f"{br.magdump_time:.2f}s" if br.magdump_time > 0 else "-")
+                if bs.weapon_damage_pct:
+                    _stat_row(stats_weapon, "Weapon Damage", "", f"+{bs.weapon_damage_pct:.0%}")
+                if bs.fire_rate_pct:
+                    _stat_row(stats_weapon, "Fire Rate", "", f"+{bs.fire_rate_pct:.0%}")
+                if bs.bullet_resist_shred:
+                    _stat_row(stats_weapon, "Bullet Shred", "", f"{bs.bullet_resist_shred:.0%}")
+                if bs.bullet_lifesteal:
+                    _stat_row(stats_weapon, "Bullet Lifesteal", "", f"{bs.bullet_lifesteal:.0%}")
+                if bs.headshot_bonus:
+                    _stat_row(stats_weapon, "Headshot Bonus", "", f"+{bs.headshot_bonus:.0f}")
+            else:
+                ui.label(f"No gun data for {hero.name}.").style("color:#f87171; font-size:12px;")
+
+        # ── Vitality tab ─────────────────────────────────────────
+        with stats_vitality:
+            base_hp  = hero.base_hp + hero.hp_gain * boons
+            total_hp = result.effective_hp
+            with ui.element("div").style(
+                "background:#1a1a2a; border:1px solid #2a2a4a; border-radius:8px;"
+                "padding:8px 10px; margin-bottom:8px;"
+                "display:grid; grid-template-columns:1fr 1fr; gap:4px; text-align:center;"
+            ):
+                for lbl, val in [
+                    ("Eff HP",  f"{total_hp:.0f}"),
+                    ("Base HP", f"{base_hp:.0f}"),
+                ]:
+                    with ui.element("div"):
+                        ui.element("div").style("font-size:9px; color:#6888d4; font-weight:700;").text = lbl
+                        ui.element("div").style("font-size:16px; color:#90a8f0; font-weight:700;").text = val
+
+            _stat_row(stats_vitality, "HP",          f"{base_hp:.0f}")
+            _stat_row(stats_vitality, "Bonus HP",    f"{bs.bonus_hp:.0f}" if bs.bonus_hp else "-",
+                delta(total_hp, base_r.effective_hp))
+            _stat_row(stats_vitality, "Bullet Shield", f"{bs.bullet_shield:.0f}" if bs.bullet_shield else "-")
+            _stat_row(stats_vitality, "Spirit Shield", f"{bs.spirit_shield:.0f}" if bs.spirit_shield else "-")
+            _stat_row(stats_vitality, "HP Regen",    f"+{bs.hp_regen:.1f}/s" if bs.hp_regen else "-")
             if bs.bullet_resist_pct:
-                stat_rows.append({"stat": "Bullet Resist", "value": f"+{bs.bullet_resist_pct:.0%}"})
+                _stat_row(stats_vitality, "Bullet Resist", "", f"+{bs.bullet_resist_pct:.0%}")
             if bs.spirit_resist_pct:
-                stat_rows.append({"stat": "Spirit Resist", "value": f"+{bs.spirit_resist_pct:.0%}"})
-            if bs.bullet_resist_shred:
-                stat_rows.append({"stat": "Bullet Shred", "value": f"{bs.bullet_resist_shred:.0%}"})
-            if bs.bullet_lifesteal:
-                stat_rows.append({"stat": "Bullet Lifesteal", "value": f"{bs.bullet_lifesteal:.0%}"})
-            if bs.bullet_shield:
-                stat_rows.append({"stat": "Bullet Shield", "value": f"{bs.bullet_shield:.0f}"})
-            if bs.cooldown_reduction:
-                stat_rows.append({"stat": "CDR", "value": f"{bs.cooldown_reduction:.0%}"})
-            stat_rows.append({"stat": "Total Cost", "value": f"{bs.total_cost}"})
-            stat_rows.append({"stat": "Effective HP", "value": f"{result.effective_hp:.0f}"})
+                _stat_row(stats_vitality, "Spirit Resist", "", f"+{bs.spirit_resist_pct:.0%}")
 
-            columns = [
-                {"name": "stat", "label": "Stat", "field": "stat", "align": "left"},
-                {"name": "value", "label": "Value", "field": "value", "align": "left"},
-            ]
-            ui.table(columns=columns, rows=stat_rows, row_key="stat").classes("w-full").props("dense flat bordered")
+        # ── Spirit tab ───────────────────────────────────────────
+        with stats_spirit:
+            with ui.element("div").style(
+                "background:#1a1228; border:1px solid #2a1848; border-radius:8px;"
+                "padding:8px 10px; margin-bottom:8px; text-align:center;"
+            ):
+                ui.element("div").style("font-size:9px; color:#9b74d4; font-weight:700;").text = "SPIRIT POWER"
+                ui.element("div").style("font-size:22px; color:#c090f0; font-weight:700;").text = (
+                    f"+{bs.spirit_power:.0f}" if bs.spirit_power else "0"
+                )
+            _stat_row(stats_spirit, "Spirit Power",    f"+{bs.spirit_power:.0f}" if bs.spirit_power else "-")
+            _stat_row(stats_spirit, "Spirit Amp",      f"+{bs.spirit_amp_pct:.0%}" if bs.spirit_amp_pct else "-")
+            _stat_row(stats_spirit, "Spirit Lifesteal",f"{bs.spirit_lifesteal:.0%}" if bs.spirit_lifesteal else "-")
+            _stat_row(stats_spirit, "CDR",             f"{bs.cooldown_reduction:.0%}" if bs.cooldown_reduction else "-")
 
-            if result.bullet_result:
-                br = result.bullet_result
-                ui.label("DPS Output").classes("text-green-400 font-bold mt-4")
-                dps_rows = [
-                    {"metric": "Damage / Bullet", "value": _fv(br.damage_per_bullet)},
-                    {"metric": "Bullets / Sec", "value": _fv(br.bullets_per_second)},
-                    {"metric": "Raw DPS", "value": _fv(br.raw_dps)},
-                    {"metric": "Final DPS", "value": _fv(br.final_dps)},
-                    {"metric": "Magazine Size", "value": _fv(br.magazine_size, "d")},
-                    {"metric": "Damage / Mag", "value": _fv(br.damage_per_magazine)},
-                    {"metric": "Magdump Time", "value": _fv(br.magdump_time) + "s" if br.magdump_time > 0 else "-"},
-                ]
-                dps_columns = [
-                    {"name": "metric", "label": "Metric", "field": "metric", "align": "left"},
-                    {"name": "value", "label": "Value", "field": "value", "align": "left"},
-                ]
-                ui.table(columns=dps_columns, rows=dps_rows, row_key="metric").classes("w-full").props("dense flat bordered")
+            ui.separator().style("margin:6px 0;")
+            _stat_row(stats_spirit, "Total Cost",   f"${bs.total_cost:,}")
+            _stat_row(stats_spirit, "Items",        f"{len(_build_items)}")
 
-    cat_filter.on_value_change(refresh_shop)
+    # ── Event wiring ──────────────────────────────────────────────
+    def _on_hero_boons(_=None):
+        update_results()
+        if sort_select.value in _IMPACT_SORT_KEYS:
+            refresh_shop()
+
     tier_filter.on_value_change(refresh_shop)
     sort_select.on_value_change(refresh_shop)
     bld_search.on_value_change(refresh_shop)
-    bld_hero.on_value_change(update_results)
-    bld_boons.on_value_change(update_results)
+    bld_hero.on_value_change(_on_hero_boons)
+    bld_boons.on_value_change(_on_hero_boons)
     bld_acc.on_value_change(update_results)
 
     refresh_build_display()
     update_results()
-
-    # Return refresh_shop so the caller can trigger it lazily on first tab activation
     return refresh_shop
 
 
