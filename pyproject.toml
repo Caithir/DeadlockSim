@@ -10,8 +10,10 @@ requires-python = ">=3.10"
 dependencies = [
     "pyyaml>=6.0",
     "nicegui>=3.0",
+    "mcp>=1.0",
 ]
 
 [project.scripts]
 deadlock-sim = "deadlock_sim.ui.cli:run_cli"
 deadlock-sim-gui = "deadlock_sim.ui.gui:run_gui"
+deadlock-sim-mcp = "deadlock_sim.mcp_server:mcp.run"
