@@ -7,18 +7,20 @@ All calculations delegated to deadlock_sim.engine.
 
 from __future__ import annotations
 
+import asyncio
 import math
 from pathlib import Path
 
 from nicegui import app, ui
 
+from ..api_client import ensure_data_available, refresh_all_data
 from ..data import load_heroes, load_items
 from ..engine.builds import BuildEngine, BuildOptimizer
 from ..engine.comparison import ComparisonEngine
 from ..engine.damage import DamageCalculator
 from ..engine.scaling import ScalingCalculator
 from ..engine.ttk import TTKCalculator
-from ..models import AbilityConfig, Build, CombatConfig, HeroStats, Item
+from ..models import Build, CombatConfig, HeroStats, Item
 
 # ── Global state ──────────────────────────────────────────────────
 
@@ -221,6 +223,12 @@ _IMPACT_SORT_KEYS: dict[str, str] = {
     "★ EHP / Soul":   "ehp_per_soul",
 }
 
+# Color palette for multi-hero scaling charts
+_CHART_COLORS = [
+    "#4080ff", "#ff6040", "#40c060", "#c0c040",
+    "#a040c0", "#40c0c0", "#ff80a0", "#80ffa0",
+]
+
 
 # ── Helpers ───────────────────────────────────────────────────────
 
@@ -235,7 +243,9 @@ def _fv(v: float, fmt: str = ".2f", zero_as_na: bool = True) -> str:
 
 
 def _item_image_url(item: Item) -> str:
-    """Return the static URL for an item's icon."""
+    """Return the URL for an item's icon, preferring API URL over local files."""
+    if item.image_url:
+        return item.image_url
     fname = _ITEM_IMAGE.get(item.name, "")
     if fname:
         return f"/static/items/{fname}"
@@ -317,47 +327,6 @@ _CUSTOM_CSS = """
     object-fit: contain;
     filter: brightness(1.05);
 }
-.item-card-name {
-    font-size: 10px;
-    text-align: center;
-    line-height: 1.25;
-    margin-top: 4px;
-    color: #ccc;
-    max-width: 78px;
-    word-break: break-word;
-    hyphens: auto;
-}
-.item-card-badge {
-    position: absolute;
-    top: 3px; right: 3px;
-    font-size: 7px; font-weight: bold; letter-spacing: 0.02em;
-    padding: 1px 4px;
-    border-radius: 3px;
-    line-height: 1.4;
-    pointer-events: none;
-}
-.badge-active { background: #b86010; color: #ffe8c0; }
-.item-card-score {
-    font-size: 9px; font-weight: bold;
-    color: #7aff7a;
-    margin-top: 2px;
-    text-align: center;
-}
-
-/* ── Tooltip — appears to the right of the card ─────────────── */
-.item-tooltip {
-    display: none;
-    position: absolute;
-    top: -2px; left: 88px;
-    min-width: 210px; max-width: 270px;
-    padding: 10px 14px;
-    border-radius: 8px;
-    z-index: 9999;
-    pointer-events: none;
-    white-space: nowrap;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.75);
-}
-.item-card:hover .item-tooltip { display: block; }
 .tooltip-name {
     font-weight: bold; font-size: 13px;
     margin-bottom: 4px;
@@ -464,6 +433,12 @@ _CUSTOM_CSS = """
 .build-item-chip img { width: 28px; height: 28px; object-fit: contain; }
 .cat-tab { padding: 8px 20px; font-weight: bold; border-radius: 6px 6px 0 0; cursor: pointer; }
 .cat-tab-active { border-bottom: 3px solid; }
+.hero-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 10px; border-radius: 20px;
+    background: #1a2a3d; border: 1px solid #4080c0;
+    margin: 2px;
+}
 """
 
 
@@ -487,20 +462,18 @@ def _render_item_card(
     stat_lines = _item_stat_lines(item)
 
     stat_html = "".join(
-        f'<div class="tooltip-condition">{l}</div>'
-        if l.startswith("Condition:")
-        else f'<div class="tooltip-stat">{l}</div>'
-        for l in stat_lines
+        f'<div class="tooltip-condition">{line}</div>'
+        if line.startswith("Condition:")
+        else f'<div class="tooltip-stat">{line}</div>'
+        for line in stat_lines
     )
-    tooltip_html = (
-        f'<div class="item-tooltip"'
-        f' style="background:{colors["bg"]};border:1px solid {colors["border"]};">'
+    tooltip_inner = (
+        f'<div style="min-width:200px;max-width:280px;">'
         f'<div class="tooltip-name" style="color:{colors["text"]};">{item.name}</div>'
         f'<div class="tooltip-cost">T{item.tier} — {item.cost} Souls</div>'
-        f'{stat_html}</div>'
+        f'{stat_html}'
+        f'</div>'
     )
-
-    badge_html = '<div class="item-card-badge badge-active">ACTIVE</div>' if item.is_active else ""
 
     score_html = ""
     if score is not None and abs(score) > 0.001:
@@ -510,13 +483,146 @@ def _render_item_card(
     with ui.element("div").classes("item-card").style(
         f"border-color:{colors['border']}; background:{colors['bg']};"
     ).on("click", lambda _, it=item: on_click_fn(it)):
-        ui.image(_item_image_url(item))
-        ui.html(badge_html + tooltip_html)
-        ui.element("div").classes("item-card-name").style(
-            f"color:{colors['text']};"
-        ).text = item.name
-        if score_html:
-            ui.html(score_html)
+        ui.image(_item_image_url(item)).style("width: 48px; height: 48px; object-fit: contain;")
+        with ui.tooltip().style(
+            f"background:{colors['bg']}; border:1px solid {colors['border']}; "
+            "padding:10px 14px; border-radius:8px; font-size:13px;"
+        ):
+            ui.html(tooltip_inner)
+
+
+# ── Tab: Heroes (Abilities + Images + Upgrades) ───────────────────
+
+
+def _build_heroes_tab() -> None:
+    with ui.row().classes("items-end gap-4 flex-wrap"):
+        heroes_select = ui.select(
+            options=_hero_names,
+            value=_hero_names[0] if _hero_names else "",
+            label="Hero",
+        ).classes("w-52")
+        spirit_input = ui.number(label="Spirit Power", value=0, min=0, step=1).classes("w-32")
+        cdr_input = ui.number(label="CDR %", value=0, min=0, max=100, step=1).classes("w-32")
+
+    ui.separator()
+    content_area = ui.column().classes("w-full gap-4")
+
+    def update(_=None):
+        hero = _heroes.get(heroes_select.value)
+        content_area.clear()
+        if not hero:
+            return
+
+        current_spirit = int(spirit_input.value or 0)
+        cdr = (cdr_input.value or 0) / 100.0
+
+        with content_area:
+            # Hero image + info row
+            with ui.row().classes("gap-6 items-start flex-wrap"):
+                img_url = hero.hero_card_url or hero.icon_url
+                if img_url:
+                    ui.image(img_url).style(
+                        "max-height: 200px; max-width: 150px; object-fit: contain; border-radius: 8px;"
+                    )
+
+                with ui.column().classes("gap-1"):
+                    ui.label(hero.name).classes("text-2xl font-bold text-amber-400")
+                    if hero.hero_labs:
+                        ui.label("[Hero Labs - stats may be incomplete]").classes("text-red-400 text-sm")
+                    if hero.role:
+                        ui.label(f"Role: {hero.role}").classes("text-gray-300")
+                    if hero.playstyle:
+                        ui.label(f"Playstyle: {hero.playstyle}").classes("text-gray-400 text-sm")
+
+                    # Spirit DPS summary
+                    total_spirit_dps = DamageCalculator.hero_total_spirit_dps(
+                        hero, current_spirit=current_spirit, cooldown_reduction=cdr
+                    )
+                    if total_spirit_dps > 0:
+                        ui.label(
+                            f"Total Spirit DPS: {total_spirit_dps:.1f}"
+                        ).classes("text-purple-400 font-bold mt-2")
+                    elif hero.abilities:
+                        ui.label("No damaging abilities found").classes("text-gray-500 text-sm mt-2")
+
+            # Abilities section
+            if hero.abilities:
+                ui.separator()
+                ui.label("Abilities").classes("text-lg font-bold text-sky-400")
+
+                for ability in hero.abilities:
+                    if not ability.name:
+                        continue
+
+                    with ui.card().classes("w-full").style(
+                        "background: #161625; border: 1px solid #2a2a4a;"
+                    ):
+                        with ui.row().classes("items-start gap-4 w-full"):
+                            # Ability icon
+                            if ability.image_url:
+                                ui.image(ability.image_url).style(
+                                    "width: 56px; height: 56px; object-fit: contain; "
+                                    "flex-shrink: 0; border-radius: 6px;"
+                                )
+
+                            with ui.column().classes("flex-grow gap-1"):
+                                # Name + type badge
+                                with ui.row().classes("items-center gap-2 flex-wrap"):
+                                    ui.label(ability.name).classes("font-bold text-amber-300")
+                                    if ability.ability_type:
+                                        atype = ability.ability_type.replace("_", " ").title()
+                                        badge_color = (
+                                            "purple" if "spirit" in ability.ability_type.lower()
+                                            else "orange" if "weapon" in ability.ability_type.lower()
+                                            else "blue"
+                                        )
+                                        ui.badge(atype).props(f"color={badge_color}")
+
+                                # Description (API returns HTML markup)
+                                if ability.description:
+                                    ui.html(ability.description).classes(
+                                        "text-gray-300 text-sm"
+                                    )
+
+                                # Key stats
+                                stat_parts = []
+                                if ability.base_damage:
+                                    stat_parts.append(f"Damage: {ability.base_damage:.0f}")
+                                if ability.spirit_scaling:
+                                    stat_parts.append(f"Spirit Scaling: {ability.spirit_scaling:.2f}x")
+                                if ability.cooldown:
+                                    stat_parts.append(f"CD: {ability.cooldown:.1f}s")
+                                if ability.duration:
+                                    stat_parts.append(f"Duration: {ability.duration:.1f}s")
+
+                                if stat_parts:
+                                    ui.label(" | ".join(stat_parts)).classes(
+                                        "text-purple-300 text-sm font-mono"
+                                    )
+
+                                # Upgrade hover tooltip
+                                if ability.upgrades:
+                                    upgrade_html = "".join(
+                                        f'<div style="margin-bottom:6px;">'
+                                        f'<span style="color:#c084fc;font-weight:bold;">T{u.tier}:</span> '
+                                        f'<span style="color:#e2d4f0;font-size:13px;">{u.description}</span>'
+                                        f'</div>'
+                                        for u in ability.upgrades
+                                    )
+                                    with ui.element("span").style("cursor:help; display:inline-block; margin-top:4px;"):
+                                        ui.label("Upgrades (hover for T1/T2/T3)").classes(
+                                            "text-purple-400 text-xs underline"
+                                        )
+                                        with ui.tooltip().style(
+                                            "background:#2a1a3d; border:1px solid #9c5dce; "
+                                            "padding:10px 14px; border-radius:8px; max-width:420px;"
+                                        ):
+                                            ui.html(upgrade_html)
+
+    heroes_select.on_value_change(update)
+    spirit_input.on_value_change(update)
+    cdr_input.on_value_change(update)
+    update()
 
 
 # ── Tab: Hero Stats ──────────────────────────────────────────────
@@ -571,181 +677,25 @@ def _build_hero_stats_tab() -> None:
     update()
 
 
-# ── Tab: Bullet Damage ──────────────────────────────────────────
-
-
-def _build_bullet_tab() -> None:
-    with ui.row().classes("w-full gap-6"):
-        with ui.column().classes("w-80 gap-2"):
-            ui.label("Attacker").classes("text-amber-400 font-bold")
-            bd_hero = ui.select(options=_hero_names, value=_hero_names[0] if _hero_names else "", label="Hero").classes("w-48")
-            bd_boons = ui.number(label="Boons", value=0, min=0, max=50, step=1).classes("w-32")
-            bd_wpn = ui.number(label="Weapon Dmg %", value=0, min=0, max=500).classes("w-32")
-            bd_fr = ui.number(label="Fire Rate %", value=0, min=0, max=500).classes("w-32")
-            bd_ammo = ui.number(label="Ammo Increase %", value=0, min=0, max=500).classes("w-32")
-
-            ui.separator()
-            ui.label("Shred Sources").classes("text-amber-400 font-bold")
-            bd_shred1 = ui.number(label="Shred 1 %", value=0, min=0, max=100).classes("w-32")
-            bd_shred2 = ui.number(label="Shred 2 %", value=0, min=0, max=100).classes("w-32")
-
-            ui.separator()
-            ui.label("Defender").classes("text-amber-400 font-bold")
-            bd_resist = ui.number(label="Bullet Resist %", value=0, min=0, max=100).classes("w-32")
-
-            ui.separator()
-            ui.label("Accuracy Model").classes("text-amber-400 font-bold")
-            bd_acc = ui.number(label="Accuracy %", value=100, min=0, max=100).classes("w-32")
-            bd_hs = ui.number(label="Headshot Rate %", value=0, min=0, max=100).classes("w-32")
-
-        with ui.column().classes("flex-grow"):
-            ui.label("Results").classes("text-sky-400 font-bold")
-            ui.separator()
-            bd_output = ui.column().classes("w-full")
-
-    def update(_=None):
-        hero = _heroes.get(bd_hero.value)
-        bd_output.clear()
-        if not hero:
-            return
-
-        shred_sources = []
-        s1, s2 = (bd_shred1.value or 0) / 100.0, (bd_shred2.value or 0) / 100.0
-        if s1 > 0:
-            shred_sources.append(s1)
-        if s2 > 0:
-            shred_sources.append(s2)
-
-        config = CombatConfig(
-            boons=int(bd_boons.value or 0),
-            weapon_damage_bonus=(bd_wpn.value or 0) / 100.0,
-            fire_rate_bonus=(bd_fr.value or 0) / 100.0,
-            ammo_increase=(bd_ammo.value or 0) / 100.0,
-            shred=shred_sources,
-            enemy_bullet_resist=(bd_resist.value or 0) / 100.0,
-            accuracy=(bd_acc.value or 0) / 100.0,
-            headshot_rate=(bd_hs.value or 0) / 100.0,
-        )
-
-        result = DamageCalculator.calculate_bullet(hero, config)
-        realistic_dps = DamageCalculator.dps_with_accuracy(hero, config)
-
-        with bd_output:
-            if result.bullets_per_second == 0 and result.damage_per_bullet == 0:
-                ui.label(f"No gun data available for {hero.name}.").classes("text-red-400")
-                return
-
-            rows = [
-                {"metric": "Damage / Bullet", "value": _fv(result.damage_per_bullet)},
-                {"metric": "Bullets / Sec", "value": _fv(result.bullets_per_second)},
-                {"metric": "Raw DPS", "value": _fv(result.raw_dps)},
-                {"metric": "", "value": ""},
-                {"metric": "Total Shred", "value": f"{result.total_shred:.1%}"},
-                {"metric": "Final Resist", "value": f"{result.final_resist:.1%}"},
-                {"metric": "Final DPS", "value": _fv(result.final_dps)},
-                {"metric": "", "value": ""},
-                {"metric": "Magazine Size", "value": _fv(result.magazine_size, "d")},
-                {"metric": "Damage / Magazine", "value": _fv(result.damage_per_magazine)},
-                {"metric": "Magdump Time", "value": _fv(result.magdump_time) + ("s" if result.magdump_time > 0 else "")},
-                {"metric": "", "value": ""},
-                {"metric": "Realistic DPS", "value": _fv(realistic_dps)},
-            ]
-            columns = [
-                {"name": "metric", "label": "Metric", "field": "metric", "align": "left"},
-                {"name": "value", "label": "Value", "field": "value", "align": "left"},
-            ]
-            ui.table(columns=columns, rows=rows, row_key="metric").classes("w-96").props("dense flat bordered")
-
-    for inp in [bd_hero, bd_boons, bd_wpn, bd_fr, bd_ammo, bd_shred1, bd_shred2, bd_resist, bd_acc, bd_hs]:
-        inp.on_value_change(update)
-    update()
-
-
-# ── Tab: Spirit Damage ───────────────────────────────────────────
-
-
-def _build_spirit_tab() -> None:
-    with ui.row().classes("w-full gap-6"):
-        with ui.column().classes("w-80 gap-2"):
-            ui.label("Ability").classes("text-purple-400 font-bold")
-            sp_base = ui.number(label="Base Damage", value=100).classes("w-32")
-            sp_mult = ui.number(label="Spirit Multiplier", value=1.0, step=0.1, format="%.2f").classes("w-32")
-            sp_spirit = ui.number(label="Current Spirit", value=0, step=1).classes("w-32")
-
-            ui.separator()
-            ui.label("Duration (DoT)").classes("text-purple-400 font-bold")
-            sp_dur = ui.number(label="Ability Duration", value=0).classes("w-32")
-            sp_bonus_dur = ui.number(label="Bonus Duration", value=0).classes("w-32")
-
-            ui.separator()
-            ui.label("Resist / Modifiers").classes("text-purple-400 font-bold")
-            sp_resist = ui.number(label="Spirit Resist %", value=0, min=0, max=100).classes("w-32")
-            sp_shred = ui.number(label="Resist Shred %", value=0, min=0, max=100).classes("w-32")
-            sp_vuln = ui.number(label="Mystic Vuln %", value=0, min=0, max=100).classes("w-32")
-            sp_amp = ui.number(label="Spirit Amp %", value=0, min=0, max=500).classes("w-32")
-
-            ui.separator()
-            ui.label("Item Effects").classes("text-purple-400 font-bold")
-            sp_ee = ui.number(label="EE Stacks", value=0, min=0, max=20, step=1).classes("w-32")
-            sp_crip = ui.number(label="Crippling %", value=0).classes("w-32")
-            sp_soul = ui.number(label="Soulshredder %", value=0).classes("w-32")
-
-        with ui.column().classes("flex-grow"):
-            ui.label("Results").classes("text-sky-400 font-bold")
-            ui.separator()
-            sp_output = ui.column().classes("w-full")
-
-    def update(_=None):
-        ability = AbilityConfig(
-            base_damage=sp_base.value or 0,
-            spirit_multiplier=sp_mult.value or 0,
-            current_spirit=int(sp_spirit.value or 0),
-            ability_duration=sp_dur.value or 0,
-            bonus_duration=sp_bonus_dur.value or 0,
-            enemy_spirit_resist=(sp_resist.value or 0) / 100.0,
-            resist_shred=(sp_shred.value or 0) / 100.0,
-            mystic_vuln=(sp_vuln.value or 0) / 100.0,
-            spirit_amp=(sp_amp.value or 0) / 100.0,
-            escalating_exposure_stacks=int(sp_ee.value or 0),
-            crippling=(sp_crip.value or 0) / 100.0,
-            soulshredder=(sp_soul.value or 0) / 100.0,
-        )
-
-        result = DamageCalculator.calculate_spirit(ability)
-        total_duration = ability.ability_duration + ability.bonus_duration
-
-        sp_output.clear()
-        with sp_output:
-            rows = [
-                {"metric": "Raw Damage", "value": f"{result.raw_damage:.2f}"},
-                {"metric": "Spirit Contribution", "value": f"{result.spirit_contribution:.2f}"},
-                {"metric": "Modified Damage", "value": f"{result.modified_damage:.2f}"},
-            ]
-            if total_duration > 0:
-                rows.append({"metric": "Total Duration", "value": f"{total_duration:.1f}s"})
-                rows.append({"metric": "DPS", "value": f"{result.dps:.2f}"})
-                rows.append({"metric": "Total DoT Damage", "value": f"{result.total_dot_damage:.2f}"})
-
-            columns = [
-                {"name": "metric", "label": "Metric", "field": "metric", "align": "left"},
-                {"name": "value", "label": "Value", "field": "value", "align": "left"},
-            ]
-            ui.table(columns=columns, rows=rows, row_key="metric").classes("w-96").props("dense flat bordered")
-
-    for inp in [sp_base, sp_mult, sp_spirit, sp_dur, sp_bonus_dur, sp_resist, sp_shred, sp_vuln, sp_amp, sp_ee, sp_crip, sp_soul]:
-        inp.on_value_change(update)
-    update()
-
-
-# ── Tab: Scaling ─────────────────────────────────────────────────
+# ── Tab: Scaling (multi-hero) ──────────────────────────────────────
 
 
 def _build_scaling_tab() -> None:
-    with ui.row().classes("gap-4 items-end"):
-        sc_hero = ui.select(options=_hero_names, value=_hero_names[0] if _hero_names else "", label="Hero").classes("w-52")
+    selected_heroes: list[str] = [_hero_names[0]] if _hero_names else []
+
+    with ui.row().classes("gap-4 items-end flex-wrap"):
+        sc_hero_pick = ui.select(
+            options=_hero_names,
+            value=_hero_names[0] if _hero_names else "",
+            label="Add Hero",
+        ).classes("w-52")
+        ui.button("Add Hero", icon="add", on_click=lambda: add_hero()).classes("mt-auto")
         sc_max = ui.number(label="Max Boons", value=35, min=1, max=50, step=1).classes("w-32")
 
+    chips_row = ui.row().classes("flex-wrap gap-1 mt-1")
+
     ui.separator()
+
     dps_chart = ui.echart({
         "title": {"text": "DPS Scaling", "textStyle": {"color": "#ccc"}},
         "tooltip": {"trigger": "axis"},
@@ -767,37 +717,107 @@ def _build_scaling_tab() -> None:
     }).classes("w-full h-64")
 
     ui.separator()
-    growth_label = ui.label("").classes("text-gray-400")
+    comparison_area = ui.column().classes("w-full")
+
+    def render_chips():
+        chips_row.clear()
+        with chips_row:
+            for name in selected_heroes:
+                color = _CHART_COLORS[selected_heroes.index(name) % len(_CHART_COLORS)]
+                with ui.element("div").classes("hero-chip").style(
+                    f"border-color: {color};"
+                ):
+                    ui.label(name).style(f"color: {color}; font-size: 13px;")
+                    ui.button(
+                        "×", on_click=lambda _, n=name: remove_hero(n)
+                    ).props("flat dense").style(
+                        "color: #ff6b6b; font-size: 14px; min-width: 20px; padding: 0; height: 20px;"
+                    )
+
+    def add_hero():
+        name = sc_hero_pick.value
+        if name and name not in selected_heroes:
+            selected_heroes.append(name)
+            render_chips()
+            update()
+
+    def remove_hero(name: str):
+        if name in selected_heroes:
+            selected_heroes.remove(name)
+            render_chips()
+            update()
 
     def update(_=None):
-        hero = _heroes.get(sc_hero.value)
-        if not hero:
-            return
-
         max_b = int(sc_max.value or 35)
-        curve = ScalingCalculator.scaling_curve(hero, max_b)
-        growth = ScalingCalculator.growth_percentage(hero, max_b)
+        dps_series = []
+        hp_series = []
 
-        boons = [s.boon_level for s in curve]
-        dps_vals = [s.dps for s in curve]
-        hp_vals = [s.hp for s in curve]
+        for i, name in enumerate(selected_heroes):
+            hero = _heroes.get(name)
+            if not hero:
+                continue
+            color = _CHART_COLORS[i % len(_CHART_COLORS)]
+            curve = ScalingCalculator.scaling_curve(hero, max_b)
+            boons = [s.boon_level for s in curve]
+            dps_vals = [s.dps for s in curve]
+            hp_vals = [s.hp for s in curve]
 
-        dps_chart.options["series"] = [
-            {"name": hero.name, "type": "line", "data": list(zip(boons, dps_vals)), "smooth": True},
-        ]
+            dps_series.append({
+                "name": name, "type": "line",
+                "data": list(zip(boons, dps_vals)),
+                "smooth": True,
+                "itemStyle": {"color": color},
+                "lineStyle": {"color": color},
+            })
+            hp_series.append({
+                "name": name, "type": "line",
+                "data": list(zip(boons, hp_vals)),
+                "smooth": True,
+                "itemStyle": {"color": color},
+                "lineStyle": {"color": color},
+            })
+
+        dps_chart.options["series"] = dps_series
         dps_chart.update()
-
-        hp_chart.options["series"] = [
-            {"name": hero.name, "type": "line", "data": list(zip(boons, hp_vals)), "smooth": True},
-        ]
+        hp_chart.options["series"] = hp_series
         hp_chart.update()
 
-        dps_g = f"{growth['dps_growth']:.1%}" if growth["dps_growth"] else "-"
-        hp_g = f"{growth['hp_growth']:.1%}" if growth["hp_growth"] else "-"
-        agg_g = f"{growth['aggregate_growth']:.1%}" if growth["aggregate_growth"] else "-"
-        growth_label.text = f"Growth (0 \u2192 {max_b} boons):  DPS {dps_g}  |  HP {hp_g}  |  Aggregate {agg_g}"
+        # Comparison table (only when multiple heroes)
+        comparison_area.clear()
+        if len(selected_heroes) >= 1:
+            with comparison_area:
+                ui.label(f"Stats at Boon {max_b}").classes("text-sky-400 font-bold")
+                rows = []
+                for name in selected_heroes:
+                    hero = _heroes.get(name)
+                    if not hero:
+                        continue
+                    curve = ScalingCalculator.scaling_curve(hero, max_b)
+                    last = curve[-1] if curve else None
+                    growth = ScalingCalculator.growth_percentage(hero, max_b)
+                    if last:
+                        rows.append({
+                            "hero": name,
+                            "dps": _fv(last.dps),
+                            "hp": f"{last.hp:.0f}",
+                            "dpm": _fv(last.dpm),
+                            "dps_growth": f"{growth['dps_growth']:.1%}" if growth["dps_growth"] else "-",
+                            "hp_growth": f"{growth['hp_growth']:.1%}" if growth["hp_growth"] else "-",
+                        })
 
-    sc_hero.on_value_change(update)
+                columns = [
+                    {"name": "hero", "label": "Hero", "field": "hero", "align": "left"},
+                    {"name": "dps", "label": "DPS", "field": "dps", "align": "left"},
+                    {"name": "hp", "label": "HP", "field": "hp", "align": "left"},
+                    {"name": "dpm", "label": "DPM", "field": "dpm", "align": "left"},
+                    {"name": "dps_growth", "label": "DPS Growth", "field": "dps_growth", "align": "left"},
+                    {"name": "hp_growth", "label": "HP Growth", "field": "hp_growth", "align": "left"},
+                ]
+                ui.table(
+                    columns=columns, rows=rows, row_key="hero"
+                ).classes("w-full max-w-3xl").props("dense flat bordered")
+
+    render_chips()
     sc_max.on_value_change(update)
     update()
 
@@ -1456,12 +1476,56 @@ def _build_eval_tab() -> None:
             _stat_row(stats_spirit, "Total Cost",   f"${bs.total_cost:,}")
             _stat_row(stats_spirit, "Items",        f"{len(_build_items)}")
 
+            if result.bullet_result:
+                br = result.bullet_result
+                ui.label("Bullet DPS").classes("text-green-400 font-bold mt-4")
+                dps_rows = [
+                    {"metric": "Damage / Bullet", "value": _fv(br.damage_per_bullet)},
+                    {"metric": "Bullets / Sec", "value": _fv(br.bullets_per_second)},
+                    {"metric": "Raw DPS", "value": _fv(br.raw_dps)},
+                    {"metric": "Final DPS", "value": _fv(br.final_dps)},
+                    {"metric": "Magazine Size", "value": _fv(br.magazine_size, "d")},
+                    {"metric": "Damage / Mag", "value": _fv(br.damage_per_magazine)},
+                    {"metric": "Magdump Time", "value": _fv(br.magdump_time) + "s" if br.magdump_time > 0 else "-"},
+                ]
+                dps_columns = [
+                    {"name": "metric", "label": "Metric", "field": "metric", "align": "left"},
+                    {"name": "value", "label": "Value", "field": "value", "align": "left"},
+                ]
+                ui.table(columns=dps_columns, rows=dps_rows, row_key="metric").classes("w-full").props("dense flat bordered")
+
+            # Spirit DPS and combined DPS
+            spirit_dps = DamageCalculator.hero_total_spirit_dps(
+                hero,
+                current_spirit=int(bs.spirit_power),
+                cooldown_reduction=bs.cooldown_reduction,
+                spirit_amp=bs.spirit_amp_pct,
+            )
+            bullet_dps = result.bullet_result.final_dps if result.bullet_result else 0.0
+            combined_dps = bullet_dps + spirit_dps
+
+            if spirit_dps > 0 or combined_dps > 0:
+                ui.label("Spirit & Combined DPS").classes("text-purple-400 font-bold mt-4")
+                combined_rows = [
+                    {"metric": "Spirit DPS", "value": _fv(spirit_dps)},
+                    {"metric": "Bullet DPS", "value": _fv(bullet_dps)},
+                    {"metric": "Combined DPS", "value": _fv(combined_dps)},
+                ]
+                combined_cols = [
+                    {"name": "metric", "label": "Metric", "field": "metric", "align": "left"},
+                    {"name": "value", "label": "Value", "field": "value", "align": "left"},
+                ]
+                ui.table(
+                    columns=combined_cols, rows=combined_rows, row_key="metric"
+                ).classes("w-full").props("dense flat bordered")
+
     # ── Event wiring ──────────────────────────────────────────────
     def _on_hero_boons(_=None):
         update_results()
         if sort_select.value in _IMPACT_SORT_KEYS:
             refresh_shop()
 
+    cat_filter.on_value_change(refresh_shop)
     tier_filter.on_value_change(refresh_shop)
     sort_select.on_value_change(refresh_shop)
     bld_search.on_value_change(refresh_shop)
@@ -1556,6 +1620,7 @@ def run_gui() -> None:
     """Launch the NiceGUI Deadlock simulator."""
     global _heroes, _hero_names, _items, _item_names
 
+    ensure_data_available()
     _heroes = load_heroes()
     _hero_names = sorted(_heroes.keys())
     _items = load_items()
@@ -1571,28 +1636,56 @@ def run_gui() -> None:
         ui.dark_mode(True)
         ui.add_css(_CUSTOM_CSS)
 
-        ui.label("DEADLOCK COMBAT SIMULATOR").classes("text-2xl font-bold text-amber-400")
+        # Header row with title + refresh button
+        with ui.row().classes("items-center gap-4 w-full"):
+            ui.label("DEADLOCK COMBAT SIMULATOR").classes("text-2xl font-bold text-amber-400")
+
+            async def do_refresh():
+                notif = ui.notification(
+                    "Refreshing API data...", spinner=True, timeout=None, type="ongoing"
+                )
+                try:
+                    loop = asyncio.get_event_loop()
+                    result = await loop.run_in_executor(None, refresh_all_data)
+                    # Reload global data
+                    global _heroes, _hero_names, _items, _item_names
+                    _heroes = load_heroes()
+                    _hero_names = sorted(_heroes.keys())
+                    _items = load_items()
+                    _item_names = sorted(_items.keys())
+                    notif.message = (
+                        f"Refreshed: {result.get('heroes', 0)} heroes, "
+                        f"{result.get('items', 0)} items"
+                    )
+                    notif.type = "positive"
+                    notif.spinner = False
+                    await asyncio.sleep(3)
+                except Exception as exc:
+                    notif.message = f"Refresh failed: {exc}"
+                    notif.type = "negative"
+                    notif.spinner = False
+                    await asyncio.sleep(4)
+                finally:
+                    notif.dismiss()
+
+            ui.button("Refresh Data", icon="sync", on_click=do_refresh).props("flat").classes("text-sky-400")
+
         ui.label(f"{len(_heroes)} heroes, {len(_items)} items loaded").classes("text-gray-500")
         ui.separator()
 
         with ui.tabs().classes("w-full") as tabs:
-            tab_hero = ui.tab("Hero Stats")
-            tab_bullet = ui.tab("Bullet Damage")
-            tab_spirit = ui.tab("Spirit Damage")
+            tab_heroes = ui.tab("Heroes")
             tab_scaling = ui.tab("Scaling")
             tab_ttk = ui.tab("TTK")
             tab_cmp = ui.tab("Comparison")
             tab_rank = ui.tab("Rankings")
             tab_build = ui.tab("Build")
             tab_opt = ui.tab("Optimizer")
+            tab_hero = ui.tab("Hero Stats")
 
-        with ui.tab_panels(tabs, value=tab_hero).classes("w-full") as panels:
-            with ui.tab_panel(tab_hero):
-                _build_hero_stats_tab()
-            with ui.tab_panel(tab_bullet):
-                _build_bullet_tab()
-            with ui.tab_panel(tab_spirit):
-                _build_spirit_tab()
+        with ui.tab_panels(tabs, value=tab_heroes).classes("w-full") as panels:
+            with ui.tab_panel(tab_heroes):
+                _build_heroes_tab()
             with ui.tab_panel(tab_scaling):
                 _build_scaling_tab()
             with ui.tab_panel(tab_ttk):
@@ -1605,6 +1698,8 @@ def run_gui() -> None:
                 _build_refresh_shop = _build_eval_tab()
             with ui.tab_panel(tab_opt):
                 _build_optimizer_tab()
+            with ui.tab_panel(tab_hero):
+                _build_hero_stats_tab()
 
         # Lazy-load the item shop only when the Build tab is first activated
         _shop_loaded = False

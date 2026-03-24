@@ -1,15 +1,15 @@
-"""Data loading from API cache or YAML files.
+"""Data loading from the API cache.
 
-Prefers data from the API cache (data/api_cache/).
-Falls back to YAML files in data/heroes/ and data/items/.
+Hero and item data comes exclusively from the Deadlock Assets API
+(assets.deadlock-api.com), cached locally under data/api_cache/.
+
+Run ``api_client.refresh_all_data()`` (or click Refresh in the GUI) to
+populate or update the local cache.
 """
 
 from __future__ import annotations
 
-import math
 from pathlib import Path
-
-import yaml
 
 from .api_client import is_cache_available, load_cache
 from .models import (
@@ -20,13 +20,7 @@ from .models import (
     ShopTier,
 )
 
-# Default paths relative to project root
-_DATA_DIR = Path(__file__).parent.parent / "data"
-_HEROES_DIR = _DATA_DIR / "heroes"
-_ITEMS_DIR = _DATA_DIR / "items"
-
 # ── Property name mapping from API to our stat fields ──────────────
-
 
 _UPGRADE_PROP_MAP = {
     "BonusWeaponPower": "weapon_damage_pct",
@@ -58,8 +52,26 @@ _SLOT_TYPE_MAP = {
     "vitality": "vitality",
 }
 
+# ── Shop tier bonuses ──────────────────────────────────────────────
+# Bonus stats granted for total spend in each category.
+# Source: in-game shop tier system (game constants).
 
-# ── API cache loading ──────────────────────────────────────────────
+_SHOP_TIER_DATA: list[tuple[int, int, int, int]] = [
+    # (cost, weapon_bonus, vitality_bonus, spirit_bonus)
+    (800,   7,   8,  7),
+    (1600,  9,  10, 11),
+    (2400, 13,  13, 15),
+    (3200, 20,  17, 19),
+    (4800, 29,  22, 25),
+    (7200, 40,  27, 32),
+    (9600, 60,  32, 44),
+    (16000, 75, 36, 56),
+    (22400, 95, 40, 69),
+    (28800, 115, 44, 81),
+]
+
+
+# ── API parsing ────────────────────────────────────────────────────
 
 
 def _parse_hero_from_api(hero_data: dict, hero_items: dict | None = None) -> HeroStats:
@@ -90,13 +102,11 @@ def _parse_hero_from_api(hero_data: dict, hero_items: dict | None = None) -> Her
     base_sprint = _stat_val("sprint_speed")
     base_stamina = int(_stat_val("stamina", 0))
 
-    # Weapon info - find the primary weapon from items
-    weapon_class = ""
+    # Primary weapon class reference
     items_map = hero_data.get("items", {})
-    if items_map:
-        weapon_class = items_map.get("weapon_primary", "")
+    weapon_class = items_map.get("weapon_primary", "") if items_map else ""
 
-    # Get weapon data from hero_items
+    # Weapon stats from per-hero items
     base_bullet_damage = 0.0
     pellets = 1
     base_ammo = 0
@@ -129,29 +139,20 @@ def _parse_hero_from_api(hero_data: dict, hero_items: dict | None = None) -> Her
     base_dps = base_bullet_damage * pellets * fire_rate
     base_dpm = base_bullet_damage * pellets * base_ammo
 
-    # Scaling stats
-    scaling = hero_data.get("scaling_stats", {})
-
-    def _scale_val(key: str) -> float:
-        s = scaling.get(key, {})
-        if isinstance(s, dict):
-            return s.get("value", 0.0) or 0.0
-        return 0.0
-
-    # Standard level up upgrades for scaling
+    # Per-boon scaling
     level_ups = hero_data.get("standard_level_up_upgrades", {})
     damage_gain = level_ups.get("EBulletDamage", 0.0) or 0.0
     hp_gain = level_ups.get("EMaxHealth", 0.0) or 0.0
+    spirit_gain = level_ups.get("EAbilityPoint", 0.0) or 0.0
 
-    # Parse abilities
+    # Abilities from per-hero items
     abilities = []
     if hero_items:
         hero_id_str = str(hero_data.get("id", ""))
         h_items = hero_items.get(hero_id_str, [])
         for item in h_items:
             if item.get("type") == "ability":
-                ability = _parse_ability(item)
-                abilities.append(ability)
+                abilities.append(_parse_ability(item))
 
     return HeroStats(
         name=name,
@@ -174,13 +175,13 @@ def _parse_hero_from_api(hero_data: dict, hero_items: dict | None = None) -> Her
         base_stamina=base_stamina,
         damage_gain=damage_gain,
         hp_gain=hp_gain,
-        spirit_gain=0.0,
+        spirit_gain=spirit_gain,
         icon_url=icon_url,
         hero_card_url=hero_card_url,
         minimap_url=minimap_url,
-        lore=desc.get("lore", "") or "",
-        role=desc.get("role", "") or "",
-        playstyle=desc.get("playstyle", "") or "",
+        lore=desc.get("lore", "") or "" if isinstance(desc, dict) else "",
+        role=desc.get("role", "") or "" if isinstance(desc, dict) else "",
+        playstyle=desc.get("playstyle", "") or "" if isinstance(desc, dict) else "",
         abilities=abilities,
         weapon_class_name=weapon_class,
         reload_duration=reload_dur,
@@ -197,7 +198,6 @@ def _parse_ability(item_data: dict) -> HeroAbility:
 
     image_url = item_data.get("image_webp") or item_data.get("image", "")
 
-    # Parse properties for damage/cooldown/duration
     props = item_data.get("properties", {}) or {}
     base_damage = 0.0
     cooldown = 0.0
@@ -223,7 +223,6 @@ def _parse_ability(item_data: dict) -> HeroAbility:
         elif "duration" in key_lower and duration == 0:
             duration = fval
 
-        # Check for spirit scaling via scale_function
         scale_fn = prop.get("scale_function")
         if scale_fn and isinstance(scale_fn, dict):
             stat_scale = scale_fn.get("stat_scale")
@@ -233,7 +232,6 @@ def _parse_ability(item_data: dict) -> HeroAbility:
                 except (ValueError, TypeError):
                     pass
 
-    # Parse upgrades
     upgrades = []
     raw_upgrades = item_data.get("upgrades", []) or []
     for i, upg in enumerate(raw_upgrades):
@@ -241,7 +239,6 @@ def _parse_ability(item_data: dict) -> HeroAbility:
             upg_desc = upg.get("description", "") or ""
             upgrades.append(AbilityUpgrade(tier=i + 1, description=upg_desc))
 
-    # Fallback: get T1/T2/T3 from description
     if not upgrades and isinstance(desc, dict):
         for tier, key in [(1, "t1_desc"), (2, "t2_desc"), (3, "t3_desc")]:
             t_desc = desc.get(key, "")
@@ -264,7 +261,7 @@ def _parse_ability(item_data: dict) -> HeroAbility:
 
 
 def _parse_upgrade_item(item_data: dict) -> Item | None:
-    """Parse a shop upgrade from API data into our Item model."""
+    """Parse a shop upgrade item from API data."""
     if item_data.get("type") != "upgrade":
         return None
 
@@ -296,9 +293,8 @@ def _parse_upgrade_item(item_data: dict) -> Item | None:
         or item_data.get("image", "")
     )
 
-    # Parse properties into stat fields
     props = item_data.get("properties", {}) or {}
-    stats = {}
+    stats: dict[str, float] = {}
     conditional = ""
     raw_properties = {}
 
@@ -311,7 +307,6 @@ def _parse_upgrade_item(item_data: dict) -> Item | None:
 
         raw_properties[key] = prop
 
-        # Check for conditional
         cond = prop.get("conditional")
         if cond:
             conditional = cond
@@ -320,18 +315,7 @@ def _parse_upgrade_item(item_data: dict) -> Item | None:
         if mapped:
             try:
                 fval = float(val)
-                # API values: some are percentages stored as whole numbers (e.g. 20 for 20%)
-                # Detect and convert: if the value looks like a percentage > 1, convert to decimal
-                if mapped in (
-                    "weapon_damage_pct", "fire_rate_pct", "ammo_pct",
-                    "bullet_resist_pct", "spirit_resist_pct",
-                    "bullet_lifesteal", "spirit_lifesteal",
-                    "bullet_resist_shred", "spirit_resist_shred",
-                    "cooldown_reduction", "spirit_amp_pct",
-                ):
-                    # API stores these as decimals already (e.g., 0.2 for 20%)
-                    pass
-                elif mapped == "ammo_flat":
+                if mapped == "ammo_flat":
                     fval = int(fval)
                 stats[mapped] = stats.get(mapped, 0) + fval
             except (ValueError, TypeError):
@@ -372,26 +356,52 @@ def _parse_upgrade_item(item_data: dict) -> Item | None:
     )
 
 
-def _load_from_api_cache() -> tuple[dict[str, HeroStats], dict[str, Item]] | None:
-    """Try to load data from the API cache. Returns None if unavailable."""
+# ── Public API ─────────────────────────────────────────────────────
+
+
+def load_heroes() -> dict[str, HeroStats]:
+    """Load heroes from the API cache.
+
+    Raises RuntimeError if no cache is available. Run
+    ``api_client.refresh_all_data()`` first, or use
+    ``api_client.ensure_data_available()`` to auto-fetch.
+    """
     if not is_cache_available():
-        return None
+        raise RuntimeError(
+            "No API cache found. Run api_client.refresh_all_data() to fetch data."
+        )
 
     heroes_data = load_cache("heroes")
-    items_data = load_cache("items")
     hero_items_data = load_cache("hero_items")
 
-    if not heroes_data or not items_data:
-        return None
+    if not heroes_data:
+        raise RuntimeError("heroes cache is empty or corrupt.")
 
-    heroes = {}
+    heroes: dict[str, HeroStats] = {}
     for h in heroes_data:
         if not h.get("player_selectable", True):
             continue
         hero = _parse_hero_from_api(h, hero_items_data)
         heroes[hero.name] = hero
 
-    items = {}
+    return heroes
+
+
+def load_items() -> dict[str, Item]:
+    """Load shop upgrade items from the API cache.
+
+    Raises RuntimeError if no cache is available.
+    """
+    if not is_cache_available():
+        raise RuntimeError(
+            "No API cache found. Run api_client.refresh_all_data() to fetch data."
+        )
+
+    items_data = load_cache("items")
+    if not items_data:
+        raise RuntimeError("items cache is empty or corrupt.")
+
+    items: dict[str, Item] = {}
     for i in items_data:
         if i.get("type") != "upgrade":
             continue
@@ -399,167 +409,17 @@ def _load_from_api_cache() -> tuple[dict[str, HeroStats], dict[str, Item]] | Non
         if item and item.cost > 0:
             items[item.name] = item
 
-    return heroes, items
-
-
-# ── YAML fallback loading ──────────────────────────────────────────
-
-
-def _hero_from_yaml(data: dict) -> HeroStats:
-    """Convert a parsed YAML dict into a HeroStats instance."""
-    gun = data.get("gun", {})
-    surv = data.get("survivability", {})
-    scale = data.get("scaling", {})
-
-    base_dmg = gun.get("base_bullet_damage", 0.0)
-    pellets = gun.get("pellets", 1) or 1
-    fire_rate = gun.get("base_fire_rate", 0.0)
-    base_ammo = gun.get("base_ammo", 0)
-
-    base_dps = base_dmg * pellets * fire_rate
-    base_dpm = base_dmg * pellets * base_ammo
-
-    return HeroStats(
-        name=data["name"],
-        base_bullet_damage=base_dmg,
-        pellets=pellets,
-        alt_fire_type=str(gun.get("alt_fire_type", "")),
-        alt_fire_pellets=gun.get("alt_fire_pellets", 1) or 1,
-        base_ammo=base_ammo,
-        base_fire_rate=fire_rate,
-        base_dps=base_dps,
-        base_dpm=base_dpm,
-        falloff_range_min=gun.get("falloff_range_min", 0.0),
-        falloff_range_max=gun.get("falloff_range_max", 0.0),
-        hero_labs=data.get("hero_labs", False),
-        base_hp=surv.get("base_hp", 0.0),
-        base_regen=surv.get("base_regen", 0.0),
-        base_move_speed=surv.get("base_move_speed", 0.0),
-        base_sprint=surv.get("base_sprint", 0.0),
-        base_stamina=surv.get("base_stamina", 0),
-        damage_gain=scale.get("damage_gain", 0.0),
-        hp_gain=scale.get("hp_gain", 0.0),
-        spirit_gain=scale.get("spirit_gain", 0.0),
-    )
-
-
-def _load_heroes_yaml(heroes_dir: Path | str | None = None) -> dict[str, HeroStats]:
-    heroes_path = Path(heroes_dir) if heroes_dir else _HEROES_DIR
-    if not heroes_path.is_dir():
-        return {}
-
-    heroes: dict[str, HeroStats] = {}
-    for yaml_file in sorted(heroes_path.glob("*.yaml")):
-        with open(yaml_file) as f:
-            data = yaml.safe_load(f)
-        if not data or "name" not in data:
-            continue
-        hero = _hero_from_yaml(data)
-        heroes[hero.name] = hero
-    return heroes
-
-
-def _load_items_yaml(items_dir: Path | str | None = None) -> dict[str, Item]:
-    items_path = Path(items_dir) if items_dir else _ITEMS_DIR
-    catalog_file = items_path / "catalog.yaml"
-    if not catalog_file.exists():
-        return {}
-
-    with open(catalog_file) as f:
-        data = yaml.safe_load(f)
-
-    if not data or "items" not in data:
-        return {}
-
-    items: dict[str, Item] = {}
-    for entry in data["items"]:
-        stats = entry.get("stats", {})
-        item = Item(
-            name=entry["name"],
-            category=entry["category"],
-            tier=entry["tier"],
-            cost=entry["cost"],
-            weapon_damage_pct=stats.get("weapon_damage_pct", 0.0),
-            fire_rate_pct=stats.get("fire_rate_pct", 0.0),
-            ammo_flat=int(stats.get("ammo_flat", 0)),
-            ammo_pct=stats.get("ammo_pct", 0.0),
-            bullet_resist_pct=stats.get("bullet_resist_pct", 0.0),
-            spirit_resist_pct=stats.get("spirit_resist_pct", 0.0),
-            bonus_hp=stats.get("bonus_hp", 0.0),
-            spirit_power=stats.get("spirit_power", 0.0),
-            bullet_lifesteal=stats.get("bullet_lifesteal", 0.0),
-            spirit_lifesteal=stats.get("spirit_lifesteal", 0.0),
-            hp_regen=stats.get("hp_regen", 0.0),
-            move_speed=stats.get("move_speed", 0.0),
-            sprint_speed=stats.get("sprint_speed", 0.0),
-            bullet_shield=stats.get("bullet_shield", 0.0),
-            spirit_shield=stats.get("spirit_shield", 0.0),
-            headshot_bonus=stats.get("headshot_bonus", 0.0),
-            bullet_resist_shred=stats.get("bullet_resist_shred", 0.0),
-            spirit_resist_shred=stats.get("spirit_resist_shred", 0.0),
-            cooldown_reduction=stats.get("cooldown_reduction", 0.0),
-            spirit_amp_pct=stats.get("spirit_amp_pct", 0.0),
-            condition=entry.get("condition", ""),
-        )
-        items[item.name] = item
     return items
 
 
-# ── Public API ─────────────────────────────────────────────────────
+def load_shop_tiers() -> list[ShopTier]:
+    """Return shop bonus tiers (hardcoded game constants)."""
+    return [
+        ShopTier(cost=cost, weapon_bonus=w, vitality_bonus=v, spirit_bonus=s)
+        for cost, w, v, s in _SHOP_TIER_DATA
+    ]
 
 
-def load_heroes(heroes_dir: Path | str | None = None) -> dict[str, HeroStats]:
-    """Load heroes. Prefers API cache, falls back to YAML."""
-    result = _load_from_api_cache()
-    if result is not None:
-        heroes, _ = result
-        if heroes:
-            return heroes
-    return _load_heroes_yaml(heroes_dir)
-
-
-def load_items(items_dir: Path | str | None = None) -> dict[str, Item]:
-    """Load items. Prefers API cache, falls back to YAML."""
-    result = _load_from_api_cache()
-    if result is not None:
-        _, items = result
-        if items:
-            return items
-    return _load_items_yaml(items_dir)
-
-
-def load_shop_tiers(items_dir: Path | str | None = None) -> list[ShopTier]:
-    """Load shop tiers from YAML (fallback only)."""
-    items_path = Path(items_dir) if items_dir else _ITEMS_DIR
-
-    weapon = _load_tier_yaml(items_path / "weapon.yaml")
-    vitality = _load_tier_yaml(items_path / "vitality.yaml")
-    spirit = _load_tier_yaml(items_path / "spirit.yaml")
-
-    vit_by_cost = {t["cost"]: t["bonus"] for t in vitality}
-    spr_by_cost = {t["cost"]: t["bonus"] for t in spirit}
-
-    tiers = []
-    for w in weapon:
-        cost = w["cost"]
-        tiers.append(ShopTier(
-            cost=cost,
-            weapon_bonus=w["bonus"],
-            vitality_bonus=vit_by_cost.get(cost, 0),
-            spirit_bonus=spr_by_cost.get(cost, 0),
-        ))
-    return tiers
-
-
-def _load_tier_yaml(filepath: Path) -> list[dict]:
-    if not filepath.exists():
-        return []
-    with open(filepath) as f:
-        data = yaml.safe_load(f)
-    return data.get("tiers", []) if data else []
-
-
-def get_hero_names(heroes_dir: Path | str | None = None) -> list[str]:
-    """Quick helper to get sorted hero names."""
-    heroes = load_heroes(heroes_dir)
-    return sorted(heroes.keys())
+def get_hero_names() -> list[str]:
+    """Sorted list of hero names from the API cache."""
+    return sorted(load_heroes().keys())
