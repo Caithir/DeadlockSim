@@ -4,6 +4,10 @@
       "command": "/usr/local/bin/python",
       "args": ["-m", "deadlock_sim.mcp_server"],
       "cwd": "/home/user/DeadlockSim"
+    },
+    "playwright": {
+      "command": "npx",
+      "args": ["-y", "@playwright/mcp@latest"]
     }
   }
 }
