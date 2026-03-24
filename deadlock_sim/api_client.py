@@ -1,7 +1,8 @@
 """Client for the Deadlock Assets API (assets.deadlock-api.com).
 
 Fetches hero and item data from the API and caches it locally as JSON files.
-Data is only refreshed when the user explicitly requests it.
+Data is only refreshed when the user explicitly requests it, or automatically
+on first run when no cache exists.
 """
 
 from __future__ import annotations
@@ -114,3 +115,13 @@ def refresh_all_data(language: str = "english") -> dict:
 def is_cache_available() -> bool:
     """Check if cached data exists."""
     return _cache_path("heroes").exists() and _cache_path("items").exists()
+
+
+def ensure_data_available(language: str = "english") -> None:
+    """Fetch and cache API data if not already cached.
+
+    Raises requests.RequestException if the API is unreachable and no
+    cache exists.
+    """
+    if not is_cache_available():
+        refresh_all_data(language)
