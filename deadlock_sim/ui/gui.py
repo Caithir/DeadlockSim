@@ -444,8 +444,9 @@ _CUSTOM_CSS = """
 /* ── Shop layout ─────────────────────────────────────────────── */
 .shop-card-grid {
     display: flex; flex-wrap: wrap;
-    gap: 4px; padding: 4px 0;
+    gap: 4px; padding: 4px 0 6px;
     align-items: flex-start;
+    overflow: visible;
 }
 /* keep old grid class for optimizer tab */
 .shop-grid {
@@ -1851,7 +1852,7 @@ def _build_eval_tab() -> None:
                             with ui.element("div").style(
                                 f"border-left:3px solid {colors['border']};"
                                 f"background:{colors['bg']}; border-radius:0 6px 6px 0;"
-                                f"margin:3px 0; padding:4px 6px 6px;"
+                                f"margin:3px 0; padding:4px 6px 8px; overflow:visible;"
                             ):
                                 ui.element("div").style(
                                     f"font-size:10px; font-weight:700; color:{colors['text']};"
@@ -1876,6 +1877,8 @@ def _build_eval_tab() -> None:
                             _render_item_card(item, add_item, score=sv, score_suffix=score_suffix)
 
     def add_item(item: Item):
+        if any(i.name == item.name for i in _build_items):
+            return
         _build_items.append(item)
         refresh_build_display()
         update_results()
