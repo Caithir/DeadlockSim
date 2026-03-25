@@ -381,6 +381,8 @@ def load_heroes() -> dict[str, HeroStats]:
     for h in heroes_data:
         if not h.get("player_selectable", True):
             continue
+        if h.get("disabled", False) or h.get("in_development", False):
+            continue
         hero = _parse_hero_from_api(h, hero_items_data)
         heroes[hero.name] = hero
 
@@ -404,6 +406,8 @@ def load_items() -> dict[str, Item]:
     items: dict[str, Item] = {}
     for i in items_data:
         if i.get("type") != "upgrade":
+            continue
+        if not i.get("shopable", False):
             continue
         item = _parse_upgrade_item(i)
         if item and item.cost > 0:

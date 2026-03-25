@@ -6,10 +6,12 @@ dist/
 build/
 venv/
 .env
+.venv
 
 # IDE
 .vscode/
 .idea/
+.claude/
 
 # OS
 .DS_Store
