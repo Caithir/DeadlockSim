@@ -1,6 +1,6 @@
 [build-system]
 requires = ["setuptools>=68.0"]
-build-backend = "setuptools.backends._legacy:_Backend"
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "deadlock-sim"
@@ -12,6 +12,9 @@ dependencies = [
     "nicegui>=3.0",
     "mcp>=1.0",
 ]
+
+[tool.setuptools.packages.find]
+include = ["deadlock_sim*"]
 
 [project.scripts]
 deadlock-sim = "deadlock_sim.ui.cli:run_cli"

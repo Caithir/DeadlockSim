@@ -8,6 +8,13 @@
     "playwright": {
       "command": "npx",
       "args": ["-y", "@playwright/mcp@latest"]
-    }
+    },
+  "permissions": {
+    "allow": [
+      "Bash(python -m deadlock_sim.ui.gui:*)",
+      "Bash(specify check:*)",
+      "Bash(find /c/projects/DeadlockSim/data -type f -name *.json)",
+      "Bash(python -c \":*)"
+    ]
   }
 }
