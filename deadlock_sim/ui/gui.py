@@ -1694,7 +1694,7 @@ def _build_eval_tab() -> None:
                     stats_spirit   = ui.column().classes("w-full gap-0")
 
         # ══ RIGHT: Filter bar + vertical cat tabs + shop ══════════
-        with ui.column().classes("flex-grow gap-0").style("min-width:0;"):
+        with ui.column().classes("flex-grow gap-0").style("min-width:0; overflow:hidden;"):
 
             # Filter bar
             with ui.row().classes("w-full items-end gap-3 flex-wrap pb-1"):
@@ -1712,7 +1712,7 @@ def _build_eval_tab() -> None:
 
             ui.separator().style("margin:2px 0;")
 
-            with ui.row().classes("flex-grow gap-0 items-start").style("min-width:0;"):
+            with ui.row().classes("w-full gap-0 items-start").style("min-width:0; flex:1 1 0;"):
 
                 # Vertical category tab strip
                 with ui.column().classes("cat-vtab-bar"):
@@ -1759,8 +1759,8 @@ def _build_eval_tab() -> None:
                         ui.tooltip(label).props("anchor='center right' self='center left'")
 
                 # Shop scroll area
-                shop_container = ui.scroll_area().classes("flex-grow border-l rounded-r").style(
-                    "background:#0d0d16; height:620px; min-width:0;"
+                shop_container = ui.scroll_area().classes("border-l rounded-r").style(
+                    "background:#0d0d16; height:620px; min-width:0; flex:1 1 0;"
                 )
 
     # ── Inner functions ───────────────────────────────────────────
