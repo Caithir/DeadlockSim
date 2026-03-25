@@ -268,6 +268,11 @@ class Item:
     # All raw properties from the API
     raw_properties: dict = field(default_factory=dict)
 
+    # Rich tooltip data from API
+    activation: str = ""  # "passive", "press", "toggle", etc.
+    tooltip_sections: list = field(default_factory=list)
+    upgrades_to: str = ""  # name of the item this upgrades into
+
 
 @dataclass
 class Build:

@@ -387,6 +387,9 @@ def _parse_upgrade_item(item_data: dict) -> Item | None:
             except (ValueError, TypeError):
                 pass
 
+    activation = item_data.get("activation", "") or ""
+    tooltip_sections = item_data.get("tooltip_sections", []) or []
+
     return Item(
         name=name,
         category=category,
@@ -419,6 +422,8 @@ def _parse_upgrade_item(item_data: dict) -> Item | None:
         spirit_amp_pct=stats.get("spirit_amp_pct", 0.0),
         condition=conditional,
         raw_properties=raw_properties,
+        activation=activation,
+        tooltip_sections=tooltip_sections,
     )
 
 
@@ -481,6 +486,30 @@ def load_items() -> dict[str, Item]:
         item = _parse_upgrade_item(i)
         if item and item.cost > 0:
             items[item.name] = item
+
+    # Build upgrades_to reverse index: class_name -> item that uses it as component
+    # When multiple items use the same component, pick the lowest-tier upgrade
+    class_to_name = {item.class_name: item.name for item in items.values()}
+    upgrades_map: dict[str, list[tuple[int, str]]] = {}  # source_name -> [(tier, target_name)]
+    for i in items_data:
+        if i.get("type") != "upgrade" or not i.get("shopable", False):
+            continue
+        comp_items = i.get("component_items", []) or []
+        target_name = i.get("name", "")
+        target_tier = i.get("item_tier", 99)
+        if isinstance(target_tier, str):
+            try:
+                target_tier = int(target_tier)
+            except ValueError:
+                target_tier = 99
+        for comp_class in comp_items:
+            source_name = class_to_name.get(comp_class)
+            if source_name and source_name in items and target_name in items:
+                upgrades_map.setdefault(source_name, []).append((target_tier, target_name))
+    for source_name, targets in upgrades_map.items():
+        # Pick the lowest-tier target (closest upgrade)
+        targets.sort(key=lambda t: t[0])
+        items[source_name].upgrades_to = targets[0][1]
 
     return items
 
