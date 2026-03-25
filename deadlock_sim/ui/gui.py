@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import math
+import re
 from pathlib import Path
 
 from nicegui import app, ui
@@ -252,52 +253,154 @@ def _item_image_url(item: Item) -> str:
     return "/static/ui/all_stats.png"
 
 
-def _item_stat_lines(item: Item) -> list[str]:
-    """Build human-readable stat lines for an item tooltip."""
-    lines: list[str] = []
-    if item.weapon_damage_pct:
-        lines.append(f"+{item.weapon_damage_pct:.0%} Weapon Damage")
-    if item.fire_rate_pct:
-        lines.append(f"+{item.fire_rate_pct:.0%} Fire Rate")
-    if item.ammo_flat:
-        lines.append(f"+{item.ammo_flat} Ammo")
-    if item.ammo_pct:
-        lines.append(f"+{item.ammo_pct:.0%} Ammo")
-    if item.bonus_hp:
-        lines.append(f"+{item.bonus_hp:.0f} HP")
-    if item.hp_regen:
-        lines.append(f"+{item.hp_regen:.1f} HP Regen")
-    if item.spirit_power:
-        lines.append(f"+{item.spirit_power:.0f} Spirit Power")
-    if item.bullet_resist_pct:
-        lines.append(f"+{item.bullet_resist_pct:.0%} Bullet Resist")
-    if item.spirit_resist_pct:
-        lines.append(f"+{item.spirit_resist_pct:.0%} Spirit Resist")
-    if item.bullet_lifesteal:
-        lines.append(f"+{item.bullet_lifesteal:.0%} Bullet Lifesteal")
-    if item.spirit_lifesteal:
-        lines.append(f"+{item.spirit_lifesteal:.0%} Spirit Lifesteal")
-    if item.bullet_shield:
-        lines.append(f"+{item.bullet_shield:.0f} Bullet Shield")
-    if item.spirit_shield:
-        lines.append(f"+{item.spirit_shield:.0f} Spirit Shield")
-    if item.headshot_bonus:
-        lines.append(f"+{item.headshot_bonus:.0f} Headshot Damage")
-    if item.bullet_resist_shred:
-        lines.append(f"{item.bullet_resist_shred:.0%} Bullet Resist Shred")
-    if item.spirit_resist_shred:
-        lines.append(f"{item.spirit_resist_shred:.0%} Spirit Resist Shred")
-    if item.cooldown_reduction:
-        lines.append(f"{item.cooldown_reduction:.0%} CDR")
-    if item.spirit_amp_pct:
-        lines.append(f"+{item.spirit_amp_pct:.0%} Spirit Amp")
-    if item.move_speed:
-        lines.append(f"+{item.move_speed:.1f} Move Speed")
-    if item.sprint_speed:
-        lines.append(f"+{item.sprint_speed:.1f} Sprint Speed")
-    if item.condition:
-        lines.append(f"Condition: {item.condition}")
-    return lines
+def _prop_display(prop: dict) -> str:
+    """Format a single property for display: prefix + value + postfix + label."""
+    val = prop.get("value", "")
+    if val in ("0", "-1", "-1.0", "0.0", ""):
+        return ""
+    label = prop.get("label", "")
+    postfix = prop.get("postfix", "")
+    prefix = prop.get("prefix", "")
+    # Handle {s:sign} prefix
+    if prefix == "{s:sign}":
+        try:
+            fv = float(str(val).rstrip("m"))
+            prefix = "+" if fv >= 0 else ""
+        except (ValueError, TypeError):
+            prefix = "+"
+    # Clean up value string
+    val_str = str(val).rstrip("m") if postfix == "m" else str(val)
+    postvalue = prop.get("postvalue_label", "")
+    if postvalue:
+        return f"{prefix}{val_str}{postfix} {postvalue}"
+    elif label:
+        return f"{prefix}{val_str}{postfix} {label}"
+    return f"{prefix}{val_str}{postfix}"
+
+
+def _build_tooltip_html(item: Item) -> str:
+    """Build rich tooltip HTML matching the in-game item tooltip style."""
+    colors = _CAT_COLORS.get(item.category, _CAT_COLORS["weapon"])
+    props = item.raw_properties or {}
+
+    # Header: name + cost
+    html = (
+        f'<div style="min-width:220px;max-width:340px;">'
+        f'<div style="font-size:16px;font-weight:bold;color:{colors["text"]};">'
+        f'{item.name}</div>'
+        f'<div style="font-size:12px;color:#4caf50;margin-bottom:6px;">'
+        f'$ {item.cost:,}</div>'
+    )
+
+    sections = item.tooltip_sections or []
+    if sections:
+        for section in sections:
+            sec_type = section.get("section_type", "")
+            attrs_list = section.get("section_attributes", [])
+
+            for attrs in attrs_list:
+                # Innate stats (top section, before passive/active label)
+                if sec_type == "innate":
+                    all_props = (
+                        attrs.get("properties", [])
+                        + attrs.get("elevated_properties", [])
+                    )
+                    for prop_name in all_props:
+                        p = props.get(prop_name)
+                        if p:
+                            txt = _prop_display(p)
+                            if txt:
+                                html += (
+                                    f'<div style="color:#b0e8b0;font-size:12px;'
+                                    f'line-height:1.6;">{txt}</div>'
+                                )
+
+                # Passive/Active section
+                elif sec_type in ("passive", "active"):
+                    label = sec_type.capitalize()
+                    html += (
+                        f'<div style="color:#888;font-size:11px;font-weight:bold;'
+                        f'text-transform:uppercase;letter-spacing:0.08em;'
+                        f'margin:6px 0 4px;padding:4px 0 2px;'
+                        f'border-top:1px solid rgba(255,255,255,0.15);">'
+                        f'{label}</div>'
+                    )
+
+                    # Description text
+                    loc = attrs.get("loc_string", "")
+                    if loc:
+                        # Strip SVG icons from description
+                        clean = re.sub(r'<svg[^>]*>.*?</svg>', '', loc, flags=re.DOTALL)
+                        clean = clean.strip()
+                        if clean:
+                            html += (
+                                f'<div style="color:#d0d0d0;font-size:12px;'
+                                f'line-height:1.5;margin-bottom:6px;">'
+                                f'{clean}</div>'
+                            )
+
+                    # Important properties (highlighted, like conditional bonuses)
+                    for prop_name in attrs.get("important_properties", []):
+                        p = props.get(prop_name)
+                        if p:
+                            txt = _prop_display(p)
+                            cond = p.get("conditional", "")
+                            is_cond = "ConditionallyApplied" in (
+                                p.get("usage_flags", [])
+                            )
+                            if txt:
+                                color = "#ffb347" if (cond or is_cond) else "#b0e8b0"
+                                html += (
+                                    f'<div style="color:{color};font-size:13px;'
+                                    f'font-weight:bold;line-height:1.6;">{txt}'
+                                )
+                                if cond or is_cond:
+                                    html += (
+                                        '<div style="color:#888;font-size:10px;'
+                                        'font-style:italic;">Conditional</div>'
+                                    )
+                                html += '</div>'
+
+                    # Regular properties
+                    for prop_name in attrs.get("properties", []):
+                        p = props.get(prop_name)
+                        if p:
+                            txt = _prop_display(p)
+                            if txt:
+                                html += (
+                                    f'<div style="color:#b0e8b0;font-size:12px;'
+                                    f'line-height:1.6;">{txt}</div>'
+                                )
+    else:
+        # Fallback: show raw properties if no tooltip_sections
+        for key, p in props.items():
+            if not isinstance(p, dict):
+                continue
+            txt = _prop_display(p)
+            if txt:
+                cond = p.get("conditional", "")
+                is_cond = "ConditionallyApplied" in p.get("usage_flags", [])
+                color = "#ffb347" if (cond or is_cond) else "#b0e8b0"
+                html += (
+                    f'<div style="color:{color};font-size:12px;'
+                    f'line-height:1.6;">{txt}</div>'
+                )
+
+    # Upgrades to
+    if item.upgrades_to:
+        html += (
+            f'<div style="margin-top:8px;padding-top:6px;'
+            f'border-top:1px solid rgba(255,255,255,0.15);">'
+            f'<span style="color:#888;font-size:10px;font-weight:bold;'
+            f'text-transform:uppercase;letter-spacing:0.08em;">'
+            f'UPGRADES TO:</span> '
+            f'<span style="color:{colors["text"]};font-size:12px;'
+            f'font-weight:bold;">{item.upgrades_to}</span>'
+            f'</div>'
+        )
+
+    html += '</div>'
+    return html
 
 
 # ── Custom CSS ────────────────────────────────────────────────────
@@ -561,31 +664,23 @@ def _render_item_card(
 ) -> None:
     """Render a shop item as a card: icon + name + optional score badge + tooltip."""
     colors = _CAT_COLORS.get(item.category, _CAT_COLORS["weapon"])
-    stat_lines = _item_stat_lines(item)
+    tooltip_inner = _build_tooltip_html(item)
 
-    stat_html = "".join(
-        f'<div class="tooltip-condition">{line}</div>'
-        if line.startswith("Condition:")
-        else f'<div class="tooltip-stat">{line}</div>'
-        for line in stat_lines
-    )
-    tooltip_inner = (
-        f'<div style="min-width:200px;max-width:280px;">'
-        f'<div class="tooltip-name" style="color:{colors["text"]};">{item.name}</div>'
-        f'<div class="tooltip-cost">T{item.tier} — {item.cost} Souls</div>'
-        f'{stat_html}'
-        f'</div>'
-    )
-
-    score_html = ""
-    if score is not None and abs(score) > 0.001:
-        sign = "+" if score > 0 else ""
-        score_html = f'<div class="item-card-score">{sign}{score:.1f}{score_suffix}</div>'
+    # Active badge overlay
+    active_badge = ""
+    if item.is_active or item.activation in ("press", "toggle", "innate_toggle"):
+        active_badge = (
+            '<div style="position:absolute;top:2px;right:2px;'
+            'background:#1a8a1a;color:#fff;font-size:7px;font-weight:bold;'
+            'padding:1px 3px;border-radius:2px;letter-spacing:0.05em;">ACTIVE</div>'
+        )
 
     with ui.element("div").classes("item-card").style(
         f"border-color:{colors['border']}; background:{colors['bg']};"
     ).on("click", lambda _, it=item: on_click_fn(it)):
         ui.image(_item_image_url(item)).style("width: 48px; height: 48px; object-fit: contain;")
+        if active_badge:
+            ui.html(active_badge)
         with ui.tooltip().style(
             f"background:{colors['bg']}; border:1px solid {colors['border']}; "
             "padding:10px 14px; border-radius:8px; font-size:13px;"
@@ -1358,6 +1453,88 @@ def _render_hero_summary_html(hero: "HeroStats | None") -> str:
     )
 
 
+def _render_hero_summary_with_tooltips(hero: "HeroStats | None") -> None:
+    """Hero icon + name + ability icons with hover tooltips (NiceGUI elements)."""
+    if hero is None:
+        ui.label("No hero selected").style("color:#555; font-size:12px;")
+        return
+
+    with ui.element("div").classes("bl-hero-summary"):
+        icon = hero.icon_url or "/static/ui/all_stats.png"
+        ui.image(icon).classes("bl-hero-icon")
+        ui.label(hero.name).style(
+            "font-size:12px; font-weight:700; color:#e8c252;"
+        )
+        with ui.element("div").classes("bl-ability-icons"):
+            for ab in [a for a in hero.abilities if a.name][:4]:
+                src = ab.image_url or "/static/ui/all_stats.png"
+                with ui.element("div").style(
+                    "position:relative; display:inline-block;"
+                ):
+                    ui.image(src).classes("bl-ability-icon")
+                    # Build ability tooltip content
+                    tooltip_parts = []
+                    tooltip_parts.append(
+                        f'<div style="font-weight:bold;color:#e8c252;'
+                        f'font-size:13px;margin-bottom:4px;">{ab.name}</div>'
+                    )
+                    if ab.ability_type:
+                        atype = ab.ability_type.replace("_", " ").title()
+                        tooltip_parts.append(
+                            f'<div style="color:#9b74d4;font-size:10px;'
+                            f'font-weight:bold;text-transform:uppercase;'
+                            f'margin-bottom:4px;">{atype}</div>'
+                        )
+                    if ab.description:
+                        import re
+                        clean_desc = re.sub(
+                            r'<svg[^>]*>.*?</svg>', '', ab.description,
+                            flags=re.DOTALL
+                        )
+                        if clean_desc.strip():
+                            tooltip_parts.append(
+                                f'<div style="color:#d0d0d0;font-size:11px;'
+                                f'line-height:1.4;margin-bottom:4px;">'
+                                f'{clean_desc.strip()}</div>'
+                            )
+                    stat_parts = []
+                    if ab.base_damage:
+                        stat_parts.append(f"Damage: {ab.base_damage:.0f}")
+                    if ab.cooldown:
+                        stat_parts.append(f"CD: {ab.cooldown:.1f}s")
+                    if ab.duration:
+                        stat_parts.append(f"Dur: {ab.duration:.1f}s")
+                    if ab.spirit_scaling:
+                        stat_parts.append(f"Scale: {ab.spirit_scaling:.2f}x")
+                    if stat_parts:
+                        tooltip_parts.append(
+                            f'<div style="color:#c084fc;font-size:11px;'
+                            f'font-family:monospace;">'
+                            f'{" | ".join(stat_parts)}</div>'
+                        )
+                    if ab.upgrades:
+                        tooltip_parts.append(
+                            '<div style="margin-top:6px;padding-top:4px;'
+                            'border-top:1px solid rgba(255,255,255,0.15);">'
+                        )
+                        for u in ab.upgrades:
+                            tooltip_parts.append(
+                                f'<div style="margin-bottom:3px;">'
+                                f'<span style="color:#c084fc;font-weight:bold;'
+                                f'font-size:11px;">T{u.tier}:</span> '
+                                f'<span style="color:#e2d4f0;font-size:11px;">'
+                                f'{u.description}</span></div>'
+                            )
+                        tooltip_parts.append('</div>')
+
+                    with ui.tooltip().style(
+                        "background:#1a1030; border:1px solid #9c5dce; "
+                        "padding:10px 14px; border-radius:8px; "
+                        "max-width:360px; font-size:12px;"
+                    ):
+                        ui.html("".join(tooltip_parts))
+
+
 def _render_ability_prog_html(hero: "HeroStats | None") -> str:
     """4 rows × 16 columns of empty ability-level boxes."""
     COLS = 16
@@ -1477,7 +1654,7 @@ def _build_eval_tab() -> None:
                     label="Accuracy %", value=50, min=0, max=100
                 ).classes("w-24")
 
-            hero_summary_html  = ui.html("").style("display:block; width:100%;")
+            hero_summary_area  = ui.element("div").style("display:block; width:100%;")
             ability_prog_html  = ui.html("").style("display:block; width:100%;")
 
             ui.separator().style("margin:8px 0 4px;")
@@ -1728,9 +1905,11 @@ def _build_eval_tab() -> None:
 
         build_total_lbl.text = f"{total:,} Souls"
 
-        # Update hero summary + ability progression HTML in-place
+        # Update hero summary with NiceGUI elements (for ability tooltips)
         hero = _heroes.get(bld_hero.value)
-        hero_summary_html.content = _render_hero_summary_html(hero)
+        hero_summary_area.clear()
+        with hero_summary_area:
+            _render_hero_summary_with_tooltips(hero)
         ability_prog_html.content = _render_ability_prog_html(hero)
 
         # Update bonus bars + total souls bar HTML in-place
@@ -1753,12 +1932,12 @@ def _build_eval_tab() -> None:
                     ).text = f"{item.cost:,}"
                     with ui.tooltip().style(
                         f"background:{colors['bg']}; border:1px solid {colors['border']};"
-                        "padding:6px 10px; border-radius:6px; font-size:12px;"
+                        "padding:10px 14px; border-radius:8px; font-size:13px;"
                     ):
                         ui.html(
-                            f'<div style="color:{colors["text"]};font-weight:bold;">'
-                            f'{item.name}</div>'
-                            f'<div style="color:#888;font-size:11px;">Click to remove</div>'
+                            _build_tooltip_html(item)
+                            + '<div style="color:#888;font-size:10px;margin-top:6px;'
+                            'font-style:italic;">Click to remove</div>'
                         )
 
             # Empty slots — always show at least 2 full rows (12), round up to multiple of 6
@@ -1806,43 +1985,57 @@ def _build_eval_tab() -> None:
         # ── Weapon tab ───────────────────────────────────────────
         with stats_weapon:
             if br and br.raw_dps > 0:
+                # Summary header: fire mode, DPS, Dmg/Mag
+                fire_mode = "Single Shot"
+                if hero.pellets > 1:
+                    fire_mode = f"{hero.pellets} Pellets"
                 with ui.element("div").style(
                     "background:#1a2a1a; border:1px solid #2a4a2a; border-radius:8px;"
                     "padding:8px 10px; margin-bottom:8px;"
                     "display:grid; grid-template-columns:1fr 1fr 1fr; gap:4px; text-align:center;"
                 ):
                     for lbl, val in [
-                        ("DPS",     f"{br.final_dps:.1f}"),
-                        ("Dmg/Mag", f"{br.damage_per_magazine:.0f}"),
-                        ("Mag",     f"{br.magazine_size}"),
+                        (fire_mode,  f"{br.final_dps:.1f} DPS"),
+                        ("Dmg/Mag",  f"{br.damage_per_magazine:.0f}"),
+                        ("Mag",      f"{br.magazine_size}"),
                     ]:
                         with ui.element("div"):
                             ui.element("div").style("font-size:9px; color:#68b45c; font-weight:700;").text = lbl
-                            ui.element("div").style("font-size:16px; color:#a0e890; font-weight:700;").text = val
+                            ui.element("div").style("font-size:14px; color:#a0e890; font-weight:700;").text = val
 
+                # All weapon stats - always shown
                 _stat_row(stats_weapon, "Bullet Damage",
-                    f"{br.damage_per_bullet:.2f}",
+                    f"{br.damage_per_bullet:.1f}",
                     delta(br.damage_per_bullet, bbr.damage_per_bullet if bbr else 0))
-                _stat_row(stats_weapon, "Shots per Second", f"{br.bullets_per_second:.2f}")
+                _stat_row(stats_weapon, "Weapon Damage",
+                    f"{bs.weapon_damage_pct:.0%}" if bs.weapon_damage_pct else "0%",
+                    f"+{bs.weapon_damage_pct:.0%}" if bs.weapon_damage_pct else "")
+                _stat_row(stats_weapon, "Shots per Second",
+                    f"{br.bullets_per_second:.2f}")
+                _stat_row(stats_weapon, "Fire Rate",
+                    f"{bs.fire_rate_pct:.0%}" if bs.fire_rate_pct else "0%",
+                    f"+{bs.fire_rate_pct:.0%}" if bs.fire_rate_pct else "")
                 _stat_row(stats_weapon, "Ammo",
                     f"{br.magazine_size}",
                     f"+{bs.ammo_flat}" if bs.ammo_flat else (f"+{bs.ammo_pct:.0%}" if bs.ammo_pct else ""))
+                _stat_row(stats_weapon, "Clip Size Increase",
+                    f"{bs.ammo_pct:.0%}" if bs.ammo_pct else "0%")
+                _stat_row(stats_weapon, "Reload Time",
+                    f"{hero.reload_duration:.1f}s" if hero.reload_duration > 0 else "-")
+                _stat_row(stats_weapon, "Bullet Lifesteal",
+                    f"{bs.bullet_lifesteal:.0%}" if bs.bullet_lifesteal else "0%")
+                _stat_row(stats_weapon, "Crit Bonus Scale",
+                    f"{bs.headshot_bonus:.0%}" if bs.headshot_bonus else "0%")
+
+                ui.separator().style("margin:4px 0;")
                 _stat_row(stats_weapon, "Raw DPS",   f"{br.raw_dps:.1f}")
                 _stat_row(stats_weapon, "Final DPS", f"{br.final_dps:.1f}",
                     delta(br.final_dps, bbr.final_dps if bbr else 0))
                 _stat_row(stats_weapon, "Dmg / Mag", f"{br.damage_per_magazine:.0f}")
                 _stat_row(stats_weapon, "Mag Time",
                     f"{br.magdump_time:.2f}s" if br.magdump_time > 0 else "-")
-                if bs.weapon_damage_pct:
-                    _stat_row(stats_weapon, "Weapon Damage", "", f"+{bs.weapon_damage_pct:.0%}")
-                if bs.fire_rate_pct:
-                    _stat_row(stats_weapon, "Fire Rate", "", f"+{bs.fire_rate_pct:.0%}")
                 if bs.bullet_resist_shred:
                     _stat_row(stats_weapon, "Bullet Shred", "", f"{bs.bullet_resist_shred:.0%}")
-                if bs.bullet_lifesteal:
-                    _stat_row(stats_weapon, "Bullet Lifesteal", "", f"{bs.bullet_lifesteal:.0%}")
-                if bs.headshot_bonus:
-                    _stat_row(stats_weapon, "Headshot Bonus", "", f"+{bs.headshot_bonus:.0f}")
             else:
                 ui.label(f"No gun data for {hero.name}.").style("color:#f87171; font-size:12px;")
 
@@ -1863,55 +2056,22 @@ def _build_eval_tab() -> None:
                         ui.element("div").style("font-size:9px; color:#6888d4; font-weight:700;").text = lbl
                         ui.element("div").style("font-size:16px; color:#90a8f0; font-weight:700;").text = val
 
-            _stat_row(stats_vitality, "HP",            f"{base_hp:.0f}")
-            _stat_row(stats_vitality, "Bonus HP",      f"{bs.bonus_hp:.0f}" if bs.bonus_hp else "-",
+            _stat_row(stats_vitality, "Base HP",        f"{base_hp:.0f}")
+            _stat_row(stats_vitality, "Bonus HP",       f"+{bs.bonus_hp:.0f}" if bs.bonus_hp else "0",
                 delta(total_hp, base_r.effective_hp))
-            _stat_row(stats_vitality, "Bullet Shield", f"{bs.bullet_shield:.0f}" if bs.bullet_shield else "-")
-            _stat_row(stats_vitality, "Spirit Shield", f"{bs.spirit_shield:.0f}" if bs.spirit_shield else "-")
-            _stat_row(stats_vitality, "HP Regen",      f"+{bs.hp_regen:.1f}/s" if bs.hp_regen else "-")
-            if bs.bullet_resist_pct:
-                _stat_row(stats_vitality, "Bullet Resist", "", f"+{bs.bullet_resist_pct:.0%}")
-            if bs.spirit_resist_pct:
-                _stat_row(stats_vitality, "Spirit Resist", "", f"+{bs.spirit_resist_pct:.0%}")
+            _stat_row(stats_vitality, "Bullet Shield",  f"{bs.bullet_shield:.0f}" if bs.bullet_shield else "0")
+            _stat_row(stats_vitality, "Spirit Shield",  f"{bs.spirit_shield:.0f}" if bs.spirit_shield else "0")
+            _stat_row(stats_vitality, "HP Regen",       f"+{hero.base_regen + bs.hp_regen:.1f}/s",
+                f"+{bs.hp_regen:.1f}" if bs.hp_regen else "")
+            _stat_row(stats_vitality, "Bullet Resist",  f"{bs.bullet_resist_pct:.0%}" if bs.bullet_resist_pct else "0%",
+                f"+{bs.bullet_resist_pct:.0%}" if bs.bullet_resist_pct else "")
+            _stat_row(stats_vitality, "Spirit Resist",  f"{bs.spirit_resist_pct:.0%}" if bs.spirit_resist_pct else "0%",
+                f"+{bs.spirit_resist_pct:.0%}" if bs.spirit_resist_pct else "")
+            _stat_row(stats_vitality, "Move Speed",     f"{hero.base_move_speed:.1f}" if hero.base_move_speed else "-")
+            _stat_row(stats_vitality, "Stamina",        f"{hero.base_stamina}")
 
         # ── Spirit tab ───────────────────────────────────────────
         with stats_spirit:
-            with ui.element("div").style(
-                "background:#1a1228; border:1px solid #2a1848; border-radius:8px;"
-                "padding:8px 10px; margin-bottom:8px; text-align:center;"
-            ):
-                ui.element("div").style("font-size:9px; color:#9b74d4; font-weight:700;").text = "SPIRIT POWER"
-                ui.element("div").style("font-size:22px; color:#c090f0; font-weight:700;").text = (
-                    f"+{bs.spirit_power:.0f}" if bs.spirit_power else "0"
-                )
-            _stat_row(stats_spirit, "Spirit Power",     f"+{bs.spirit_power:.0f}" if bs.spirit_power else "-")
-            _stat_row(stats_spirit, "Spirit Amp",       f"+{bs.spirit_amp_pct:.0%}" if bs.spirit_amp_pct else "-")
-            _stat_row(stats_spirit, "Spirit Lifesteal", f"{bs.spirit_lifesteal:.0%}" if bs.spirit_lifesteal else "-")
-            _stat_row(stats_spirit, "CDR",              f"{bs.cooldown_reduction:.0%}" if bs.cooldown_reduction else "-")
-
-            ui.separator().style("margin:6px 0;")
-            _stat_row(stats_spirit, "Total Cost", f"${bs.total_cost:,}")
-            _stat_row(stats_spirit, "Items",      f"{len(_build_items)}")
-
-            if result.bullet_result:
-                br = result.bullet_result
-                ui.label("Bullet DPS").classes("text-green-400 font-bold mt-4")
-                dps_rows = [
-                    {"metric": "Damage / Bullet", "value": _fv(br.damage_per_bullet)},
-                    {"metric": "Bullets / Sec",   "value": _fv(br.bullets_per_second)},
-                    {"metric": "Raw DPS",          "value": _fv(br.raw_dps)},
-                    {"metric": "Final DPS",        "value": _fv(br.final_dps)},
-                    {"metric": "Magazine Size",    "value": _fv(br.magazine_size, "d")},
-                    {"metric": "Damage / Mag",     "value": _fv(br.damage_per_magazine)},
-                    {"metric": "Magdump Time",
-                     "value": _fv(br.magdump_time) + "s" if br.magdump_time > 0 else "-"},
-                ]
-                dps_columns = [
-                    {"name": "metric", "label": "Metric", "field": "metric", "align": "left"},
-                    {"name": "value",  "label": "Value",  "field": "value",  "align": "left"},
-                ]
-                ui.table(columns=dps_columns, rows=dps_rows, row_key="metric").classes("w-full").props("dense flat bordered")
-
             spirit_dps = DamageCalculator.hero_total_spirit_dps(
                 hero,
                 current_spirit=int(bs.spirit_power),
@@ -1921,20 +2081,31 @@ def _build_eval_tab() -> None:
             bullet_dps   = result.bullet_result.final_dps if result.bullet_result else 0.0
             combined_dps = bullet_dps + spirit_dps
 
-            if spirit_dps > 0 or combined_dps > 0:
-                ui.label("Spirit & Combined DPS").classes("text-purple-400 font-bold mt-4")
-                combined_rows = [
-                    {"metric": "Spirit DPS",   "value": _fv(spirit_dps)},
-                    {"metric": "Bullet DPS",   "value": _fv(bullet_dps)},
-                    {"metric": "Combined DPS", "value": _fv(combined_dps)},
-                ]
-                combined_cols = [
-                    {"name": "metric", "label": "Metric", "field": "metric", "align": "left"},
-                    {"name": "value",  "label": "Value",  "field": "value",  "align": "left"},
-                ]
-                ui.table(
-                    columns=combined_cols, rows=combined_rows, row_key="metric"
-                ).classes("w-full").props("dense flat bordered")
+            with ui.element("div").style(
+                "background:#1a1228; border:1px solid #2a1848; border-radius:8px;"
+                "padding:8px 10px; margin-bottom:8px; text-align:center;"
+            ):
+                ui.element("div").style("font-size:9px; color:#9b74d4; font-weight:700;").text = "SPIRIT POWER"
+                ui.element("div").style("font-size:22px; color:#c090f0; font-weight:700;").text = (
+                    f"+{bs.spirit_power:.0f}" if bs.spirit_power else "0"
+                )
+            _stat_row(stats_spirit, "Spirit Power",     f"+{bs.spirit_power:.0f}" if bs.spirit_power else "0")
+            _stat_row(stats_spirit, "Spirit Amp",       f"+{bs.spirit_amp_pct:.0%}" if bs.spirit_amp_pct else "0%")
+            _stat_row(stats_spirit, "Spirit Lifesteal", f"{bs.spirit_lifesteal:.0%}" if bs.spirit_lifesteal else "0%")
+            _stat_row(stats_spirit, "CDR",              f"{bs.cooldown_reduction:.0%}" if bs.cooldown_reduction else "0%")
+            _stat_row(stats_spirit, "Spirit Resist Shred",
+                f"{bs.spirit_resist_shred:.0%}" if bs.spirit_resist_shred else "0%")
+
+            ui.separator().style("margin:6px 0;")
+
+            # DPS summary
+            _stat_row(stats_spirit, "Spirit DPS",   f"{spirit_dps:.1f}" if spirit_dps > 0 else "-")
+            _stat_row(stats_spirit, "Bullet DPS",   f"{bullet_dps:.1f}" if bullet_dps > 0 else "-")
+            _stat_row(stats_spirit, "Combined DPS", f"{combined_dps:.1f}" if combined_dps > 0 else "-")
+
+            ui.separator().style("margin:6px 0;")
+            _stat_row(stats_spirit, "Total Cost", f"${bs.total_cost:,}")
+            _stat_row(stats_spirit, "Items",      f"{len(_build_items)}")
 
     # ── Event wiring ──────────────────────────────────────────────
     def _on_hero_boons(_=None):
