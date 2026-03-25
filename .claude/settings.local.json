@@ -1,4 +1,14 @@
 {
+  "mcpServers": {
+    "deadlock-sim": {
+      "command": "/usr/local/bin/python",
+      "args": ["-m", "deadlock_sim.mcp_server"],
+      "cwd": "/home/user/DeadlockSim"
+    },
+    "playwright": {
+      "command": "npx",
+      "args": ["-y", "@playwright/mcp@latest"]
+    },
   "permissions": {
     "allow": [
       "Bash(python -m deadlock_sim.ui.gui:*)",

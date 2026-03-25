@@ -10,6 +10,7 @@ requires-python = ">=3.10"
 dependencies = [
     "requests>=2.28",
     "nicegui>=3.0",
+    "mcp>=1.0",
 ]
 
 [tool.setuptools.packages.find]
@@ -18,3 +19,4 @@ include = ["deadlock_sim*"]
 [project.scripts]
 deadlock-sim = "deadlock_sim.ui.cli:run_cli"
 deadlock-sim-gui = "deadlock_sim.ui.gui:run_gui"
+deadlock-sim-mcp = "deadlock_sim.mcp_server:mcp.run"
