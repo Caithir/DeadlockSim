@@ -187,7 +187,7 @@ def display_scaling(hero: HeroStats, max_boons: int = 35) -> None:
         return
 
     print(f"  {'Boon':>4}  {'Bullet Dmg':>10}  {'DPS':>10}  {'HP':>8}  {'Spirit':>7}")
-    print(f"  {_divider('─', 47)}")
+    print(f"  {_divider('-', 47)}")
 
     step = max(1, max_boons // 10)
     for snap in curve:
@@ -253,7 +253,7 @@ def display_comparison(
 
     print(_header(f"Comparison: {hero_a.name} vs {hero_b.name} (Boon {boon_level})"))
     print(f"  {'':16} {'':>2}{hero_a.name:>14}  {hero_b.name:>14}  {'Ratio':>8}")
-    print(f"  {_divider('─', 56)}")
+    print(f"  {_divider('-', 56)}")
     print(f"  {'DPS':16}   {_val(comp.hero_a_dps):>14}  {_val(comp.hero_b_dps):>14}  {_ratio_val(comp.dps_ratio):>8}")
     print(f"  {'HP':16}   {_val(comp.hero_a_hp, '.0f'):>14}  {_val(comp.hero_b_hp, '.0f'):>14}  {_ratio_val(comp.hp_ratio):>8}")
     print(f"  {'DPM':16}   {_val(comp.hero_a_dpm):>14}  {_val(comp.hero_b_dpm):>14}  {_ratio_val(comp.dpm_ratio):>8}")
@@ -270,7 +270,7 @@ def display_rankings(
 
     print(_header(f"Hero Rankings - {stat.upper()} (Boon {boon_level})"))
     print(f"  {'Rank':>4}  {'Hero':<16}  {'Value':>12}")
-    print(f"  {_divider('─', 36)}")
+    print(f"  {_divider('-', 36)}")
     for entry in rankings[:top_n]:
         if "growth" in stat:
             val_str = _pct_val(entry.value)
@@ -523,7 +523,7 @@ def run_cli() -> None:
     print(f"  Loaded {len(heroes)} heroes, {len(items_db)} items.\n")
 
     while True:
-        print(f"\n{'─' * 40}")
+        print(f"\n{'-' * 40}")
         print("  MAIN MENU")
         choice = _prompt_choice("Choose", MAIN_MENU)
 

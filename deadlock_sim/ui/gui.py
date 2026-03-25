@@ -1525,7 +1525,6 @@ def _build_eval_tab() -> None:
         if sort_select.value in _IMPACT_SORT_KEYS:
             refresh_shop()
 
-    cat_filter.on_value_change(refresh_shop)
     tier_filter.on_value_change(refresh_shop)
     sort_select.on_value_change(refresh_shop)
     bld_search.on_value_change(refresh_shop)
