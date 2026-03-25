@@ -647,6 +647,52 @@ def _build_heroes_tab() -> None:
                     elif hero.abilities:
                         ui.label("No damaging abilities found").classes("text-gray-500 text-sm mt-2")
 
+            # Stats section
+            ui.separator()
+            has_gun = hero.base_bullet_damage > 0 or hero.base_fire_rate > 0
+            _hero_stat_cols = [
+                {"name": "stat", "label": "Stat", "field": "stat", "align": "left"},
+                {"name": "value", "label": "Value", "field": "value", "align": "left"},
+            ]
+            with ui.row().classes("gap-6 flex-wrap items-start"):
+                # Weapon stats
+                with ui.column().classes("gap-0"):
+                    ui.label("Weapon").classes("text-sm font-bold text-orange-400 mb-1")
+                    gun_rows = [
+                        {"stat": "Bullet Damage", "value": f"{hero.base_bullet_damage:.2f}" if has_gun else "-"},
+                        {"stat": "Fire Rate", "value": f"{hero.base_fire_rate:.2f} /s" if hero.base_fire_rate > 0 else "-"},
+                        {"stat": "Base DPS", "value": _fv(hero.base_dps)},
+                        {"stat": "Magazine", "value": _fv(hero.base_ammo, "d")},
+                        {"stat": "DPM", "value": _fv(hero.base_dpm)},
+                        {"stat": "Reload", "value": f"{hero.reload_duration:.2f}s" if hero.reload_duration > 0 else "-"},
+                        {"stat": "Falloff", "value": f"{hero.falloff_range_min:.0f}m - {hero.falloff_range_max:.0f}m" if has_gun else "-"},
+                    ]
+                    ui.table(columns=_hero_stat_cols, rows=gun_rows, row_key="stat").classes("w-72").props("dense flat bordered")
+
+                # Vitality stats
+                with ui.column().classes("gap-0"):
+                    ui.label("Vitality").classes("text-sm font-bold text-green-400 mb-1")
+                    vit_rows = [
+                        {"stat": "HP", "value": _fv(hero.base_hp, ".0f")},
+                        {"stat": "Regen", "value": f"{hero.base_regen:.1f} /s"},
+                        {"stat": "Move Speed", "value": _fv(hero.base_move_speed)},
+                        {"stat": "Sprint", "value": f"{hero.base_sprint:.1f}"},
+                        {"stat": "Stamina", "value": _fv(hero.base_stamina, "d")},
+                        {"stat": "Light Melee", "value": _fv(hero.light_melee_damage, ".0f") if hero.light_melee_damage else "-"},
+                        {"stat": "Heavy Melee", "value": _fv(hero.heavy_melee_damage, ".0f") if hero.heavy_melee_damage else "-"},
+                    ]
+                    ui.table(columns=_hero_stat_cols, rows=vit_rows, row_key="stat").classes("w-72").props("dense flat bordered")
+
+                # Per-boon scaling
+                with ui.column().classes("gap-0"):
+                    ui.label("Per-Boon Scaling").classes("text-sm font-bold text-sky-400 mb-1")
+                    scaling_rows = [
+                        {"stat": "Dmg / Boon", "value": _fv(hero.damage_gain, "+.2%") if hero.damage_gain else "-"},
+                        {"stat": "HP / Boon", "value": _fv(hero.hp_gain, "+.0f")},
+                        {"stat": "Spirit / Boon", "value": _fv(hero.spirit_gain, "+.1f")},
+                    ]
+                    ui.table(columns=_hero_stat_cols, rows=scaling_rows, row_key="stat").classes("w-72").props("dense flat bordered")
+
             # Abilities section
             if hero.abilities:
                 ui.separator()
@@ -738,42 +784,143 @@ def _build_hero_stats_tab() -> None:
     ).classes("w-52")
     output = ui.column().classes("w-full")
 
+    stat_columns = [
+        {"name": "stat", "label": "Stat", "field": "stat", "align": "left"},
+        {"name": "value", "label": "Value", "field": "value", "align": "left"},
+    ]
+
     def update(_=None):
         hero = _heroes.get(hero_select.value)
         output.clear()
         if not hero:
             return
         with output:
-            ui.label(hero.name).classes("text-lg font-bold text-amber-400")
-            if hero.hero_labs:
-                ui.label("[Hero Labs - stats may be incomplete]").classes("text-red-400")
+            # Header with image
+            with ui.row().classes("gap-4 items-start"):
+                img_url = hero.hero_card_url or hero.icon_url
+                if img_url:
+                    ui.image(img_url).style(
+                        "max-height: 120px; max-width: 90px; object-fit: contain; border-radius: 6px;"
+                    )
+                with ui.column().classes("gap-1"):
+                    ui.label(hero.name).classes("text-lg font-bold text-amber-400")
+                    if hero.hero_labs:
+                        ui.label("[Hero Labs - stats may be incomplete]").classes("text-red-400 text-sm")
+                    if hero.role:
+                        ui.label(f"Role: {hero.role}").classes("text-gray-300 text-sm")
+                    if hero.playstyle:
+                        ui.label(hero.playstyle).classes("text-gray-400 text-xs")
 
             has_gun = hero.base_bullet_damage > 0 or hero.base_fire_rate > 0
-            rows = [
-                {"stat": "Bullet Damage", "value": f"{hero.base_bullet_damage:.2f}" if has_gun else "-"},
-                {"stat": "Pellets", "value": f"{hero.pellets}" if has_gun else "-"},
-                {"stat": "Fire Rate", "value": f"{hero.base_fire_rate:.2f} /s" if hero.base_fire_rate > 0 else "-"},
-                {"stat": "Base DPS", "value": _fv(hero.base_dps)},
-                {"stat": "Magazine", "value": _fv(hero.base_ammo, "d")},
-                {"stat": "DPM", "value": _fv(hero.base_dpm)},
-                {"stat": "Falloff Range", "value": f"{hero.falloff_range_min:.0f}m - {hero.falloff_range_max:.0f}m" if has_gun else "-"},
-                {"stat": "", "value": ""},
-                {"stat": "HP", "value": _fv(hero.base_hp, ".0f")},
-                {"stat": "Regen", "value": f"{hero.base_regen:.1f} /s"},
-                {"stat": "Move Speed", "value": _fv(hero.base_move_speed)},
-                {"stat": "Sprint", "value": f"{hero.base_sprint:.1f}"},
-                {"stat": "Stamina", "value": _fv(hero.base_stamina, "d")},
-                {"stat": "", "value": ""},
-                {"stat": "Dmg Gain / Boon", "value": _fv(hero.damage_gain, "+.2f")},
-                {"stat": "HP Gain / Boon", "value": _fv(hero.hp_gain, "+.0f")},
-                {"stat": "Spirit Gain / Boon", "value": _fv(hero.spirit_gain, "+.1f")},
-            ]
 
-            columns = [
-                {"name": "stat", "label": "Stat", "field": "stat", "align": "left"},
-                {"name": "value", "label": "Value", "field": "value", "align": "left"},
-            ]
-            ui.table(columns=columns, rows=rows, row_key="stat").classes("w-96").props("dense flat bordered")
+            with ui.row().classes("gap-6 flex-wrap items-start"):
+                # Gun stats
+                with ui.column().classes("gap-0"):
+                    ui.label("Weapon").classes("text-sm font-bold text-orange-400 mb-1")
+                    gun_rows = [
+                        {"stat": "Bullet Damage", "value": f"{hero.base_bullet_damage:.2f}" if has_gun else "-"},
+                        {"stat": "Pellets", "value": f"{hero.pellets}" if has_gun else "-"},
+                        {"stat": "Fire Rate", "value": f"{hero.base_fire_rate:.2f} /s" if hero.base_fire_rate > 0 else "-"},
+                        {"stat": "Cycle Time", "value": f"{hero.cycle_time:.3f}s" if hero.cycle_time > 0 else "-"},
+                        {"stat": "Base DPS", "value": _fv(hero.base_dps)},
+                        {"stat": "Magazine", "value": _fv(hero.base_ammo, "d")},
+                        {"stat": "DPM", "value": _fv(hero.base_dpm)},
+                        {"stat": "Reload", "value": f"{hero.reload_duration:.2f}s" if hero.reload_duration > 0 else "-"},
+                        {"stat": "Falloff Range", "value": f"{hero.falloff_range_min:.0f}m - {hero.falloff_range_max:.0f}m" if has_gun else "-"},
+                    ]
+                    if hero.alt_fire_type:
+                        gun_rows.append({"stat": "Alt Fire", "value": hero.alt_fire_type.title()})
+                    ui.table(columns=stat_columns, rows=gun_rows, row_key="stat").classes("w-80").props("dense flat bordered")
+
+                # Vitality stats
+                with ui.column().classes("gap-0"):
+                    ui.label("Vitality").classes("text-sm font-bold text-green-400 mb-1")
+                    vit_rows = [
+                        {"stat": "HP", "value": _fv(hero.base_hp, ".0f")},
+                        {"stat": "Regen", "value": f"{hero.base_regen:.1f} /s"},
+                        {"stat": "Move Speed", "value": _fv(hero.base_move_speed)},
+                        {"stat": "Sprint", "value": f"{hero.base_sprint:.1f}"},
+                        {"stat": "Stamina", "value": _fv(hero.base_stamina, "d")},
+                        {"stat": "Light Melee", "value": _fv(hero.light_melee_damage, ".0f") if hero.light_melee_damage else "-"},
+                        {"stat": "Heavy Melee", "value": _fv(hero.heavy_melee_damage, ".0f") if hero.heavy_melee_damage else "-"},
+                    ]
+                    ui.table(columns=stat_columns, rows=vit_rows, row_key="stat").classes("w-80").props("dense flat bordered")
+
+                # Scaling stats
+                with ui.column().classes("gap-0"):
+                    ui.label("Per-Boon Scaling").classes("text-sm font-bold text-sky-400 mb-1")
+                    scaling_rows = [
+                        {"stat": "Dmg Gain / Boon", "value": _fv(hero.damage_gain, "+.2%") if hero.damage_gain else "-"},
+                        {"stat": "HP Gain / Boon", "value": _fv(hero.hp_gain, "+.0f")},
+                        {"stat": "Spirit Gain / Boon", "value": _fv(hero.spirit_gain, "+.1f")},
+                    ]
+                    ui.table(columns=stat_columns, rows=scaling_rows, row_key="stat").classes("w-80").props("dense flat bordered")
+
+                    # Max-level projections
+                    if hero.max_level_hp > 0 or hero.max_gun_dps > 0:
+                        ui.label("Max Level (48 boons)").classes("text-sm font-bold text-amber-400 mt-3 mb-1")
+                        max_rows = [
+                            {"stat": "Max HP", "value": _fv(hero.max_level_hp, ".0f")},
+                            {"stat": "Max Gun Damage", "value": _fv(hero.max_gun_damage, ".2f") if hero.max_gun_damage > 0 else "-"},
+                            {"stat": "Max Gun DPS", "value": _fv(hero.max_gun_dps, ".1f") if hero.max_gun_dps > 0 else "-"},
+                        ]
+                        ui.table(columns=stat_columns, rows=max_rows, row_key="stat").classes("w-80").props("dense flat bordered")
+
+            # Abilities section
+            if hero.abilities:
+                ui.separator()
+                ui.label("Abilities").classes("text-sm font-bold text-purple-400")
+
+                for ability in hero.abilities:
+                    if not ability.name:
+                        continue
+                    with ui.card().classes("w-full").style(
+                        "background: #161625; border: 1px solid #2a2a4a; padding: 8px 12px;"
+                    ):
+                        with ui.row().classes("items-start gap-3 w-full"):
+                            if ability.image_url:
+                                ui.image(ability.image_url).style(
+                                    "width: 40px; height: 40px; object-fit: contain; flex-shrink: 0; border-radius: 4px;"
+                                )
+                            with ui.column().classes("flex-grow gap-0"):
+                                with ui.row().classes("items-center gap-2"):
+                                    ui.label(ability.name).classes("font-bold text-amber-300 text-sm")
+                                    if ability.ability_type:
+                                        atype = ability.ability_type.replace("_", " ").title()
+                                        badge_color = (
+                                            "purple" if "spirit" in ability.ability_type.lower()
+                                            else "orange" if "weapon" in ability.ability_type.lower()
+                                            else "blue"
+                                        )
+                                        ui.badge(atype).props(f"color={badge_color}")
+
+                                stat_parts = []
+                                if ability.base_damage:
+                                    stat_parts.append(f"Dmg: {ability.base_damage:.0f}")
+                                if ability.spirit_scaling:
+                                    stat_parts.append(f"Spirit: {ability.spirit_scaling:.2f}x")
+                                if ability.cooldown:
+                                    stat_parts.append(f"CD: {ability.cooldown:.1f}s")
+                                if ability.duration:
+                                    stat_parts.append(f"Dur: {ability.duration:.1f}s")
+                                if stat_parts:
+                                    ui.label(" | ".join(stat_parts)).classes("text-purple-300 text-xs font-mono")
+
+                                if ability.upgrades:
+                                    upgrade_html = "".join(
+                                        f'<div style="margin-bottom:4px;">'
+                                        f'<span style="color:#c084fc;font-weight:bold;">T{u.tier}:</span> '
+                                        f'<span style="color:#e2d4f0;font-size:12px;">{u.description}</span>'
+                                        f'</div>'
+                                        for u in ability.upgrades
+                                    )
+                                    with ui.element("span").style("cursor:help; display:inline-block;"):
+                                        ui.label("Upgrades ▸").classes("text-purple-400 text-xs underline")
+                                        with ui.tooltip().style(
+                                            "background:#2a1a3d; border:1px solid #9c5dce; "
+                                            "padding:8px 12px; border-radius:6px; max-width:420px;"
+                                        ):
+                                            ui.html(upgrade_html)
 
     hero_select.on_value_change(update)
     update()

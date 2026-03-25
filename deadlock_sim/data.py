@@ -74,7 +74,11 @@ _SHOP_TIER_DATA: list[tuple[int, int, int, int]] = [
 # ── API parsing ────────────────────────────────────────────────────
 
 
-def _parse_hero_from_api(hero_data: dict, hero_items: dict | None = None) -> HeroStats:
+def _parse_hero_from_api(
+    hero_data: dict,
+    hero_items: dict | None = None,
+    weapons_list: list | None = None,
+) -> HeroStats:
     """Parse a hero from the API JSON into HeroStats."""
     name = hero_data.get("name", "Unknown")
 
@@ -101,6 +105,8 @@ def _parse_hero_from_api(hero_data: dict, hero_items: dict | None = None) -> Her
     base_move_speed = _stat_val("max_move_speed")
     base_sprint = _stat_val("sprint_speed")
     base_stamina = int(_stat_val("stamina", 0))
+    light_melee = _stat_val("light_melee_damage")
+    heavy_melee = _stat_val("heavy_melee_damage")
 
     # Primary weapon class reference
     items_map = hero_data.get("items", {})
@@ -117,33 +123,62 @@ def _parse_hero_from_api(hero_data: dict, hero_items: dict | None = None) -> Her
     cycle_time = 0.0
     can_zoom = False
 
+    # Look for weapon in hero_items first, then weapons_list
+    weapon_sources: list[dict] = []
     if hero_items:
         hero_id_str = str(hero_data.get("id", ""))
         h_items = hero_items.get(hero_id_str, [])
-        for item in h_items:
-            if item.get("type") == "weapon" and item.get("class_name") == weapon_class:
-                wi = item.get("weapon_info", {})
-                if wi:
-                    base_bullet_damage = wi.get("bullet_damage", 0.0) or 0.0
-                    pellets = wi.get("bullets", 1) or 1
-                    base_ammo = wi.get("clip_size", 0) or 0
-                    cycle_time = wi.get("cycle_time", 0.0) or 0.0
-                    if cycle_time > 0:
-                        fire_rate = 1.0 / cycle_time
-                    falloff_start = wi.get("damage_falloff_start_range", 0.0) or 0.0
-                    falloff_end = wi.get("damage_falloff_end_range", 0.0) or 0.0
-                    reload_dur = wi.get("reload_duration", 0.0) or 0.0
-                    can_zoom = wi.get("can_zoom", False) or False
-                break
+        weapon_sources.extend(
+            item for item in h_items
+            if item.get("type") == "weapon" and item.get("class_name") == weapon_class
+        )
+    if not weapon_sources and weapons_list and weapon_class:
+        weapon_sources.extend(
+            w for w in weapons_list
+            if w.get("class_name") == weapon_class
+        )
+    for item in weapon_sources:
+        wi = item.get("weapon_info", {})
+        if wi:
+            base_bullet_damage = wi.get("bullet_damage", 0.0) or 0.0
+            pellets = wi.get("bullets", 1) or 1
+            base_ammo = wi.get("clip_size", 0) or 0
+            cycle_time = wi.get("cycle_time", 0.0) or 0.0
+            if cycle_time > 0:
+                fire_rate = 1.0 / cycle_time
+            falloff_start = wi.get("damage_falloff_start_range", 0.0) or 0.0
+            falloff_end = wi.get("damage_falloff_end_range", 0.0) or 0.0
+            reload_dur = wi.get("reload_duration", 0.0) or 0.0
+            can_zoom = wi.get("can_zoom", False) or False
+        break
 
     base_dps = base_bullet_damage * pellets * fire_rate
     base_dpm = base_bullet_damage * pellets * base_ammo
 
     # Per-boon scaling
     level_ups = hero_data.get("standard_level_up_upgrades", {})
-    damage_gain = level_ups.get("EBulletDamage", 0.0) or 0.0
-    hp_gain = level_ups.get("EMaxHealth", 0.0) or 0.0
-    spirit_gain = level_ups.get("EAbilityPoint", 0.0) or 0.0
+    # Try both short and long key formats
+    damage_gain = (
+        level_ups.get("EBulletDamage", 0.0)
+        or level_ups.get("MODIFIER_VALUE_BASE_BULLET_DAMAGE_FROM_LEVEL", 0.0)
+        or 0.0
+    )
+    hp_gain = (
+        level_ups.get("EMaxHealth", 0.0)
+        or level_ups.get("MODIFIER_VALUE_BASE_HEALTH_FROM_LEVEL", 0.0)
+        or 0.0
+    )
+    spirit_gain = (
+        level_ups.get("EAbilityPoint", 0.0)
+        or level_ups.get("MODIFIER_VALUE_TECH_POWER", 0.0)
+        or 0.0
+    )
+
+    # Max-level projections (assuming ~48 boons at max level)
+    max_boons = 48
+    max_level_hp = base_hp + hp_gain * max_boons
+    max_gun_damage = base_bullet_damage * (1 + damage_gain * max_boons)
+    max_gun_dps = max_gun_damage * pellets * fire_rate
 
     # Abilities from per-hero items
     abilities = []
@@ -167,6 +202,9 @@ def _parse_hero_from_api(hero_data: dict, hero_items: dict | None = None) -> Her
         falloff_range_min=falloff_start,
         falloff_range_max=falloff_end,
         alt_fire_type="zoom" if can_zoom else "",
+        alt_fire_pellets=1,
+        light_melee_damage=light_melee,
+        heavy_melee_damage=heavy_melee,
         hero_labs=hero_data.get("in_development", False) or hero_data.get("needs_testing", False),
         base_hp=base_hp,
         base_regen=base_regen,
@@ -176,6 +214,9 @@ def _parse_hero_from_api(hero_data: dict, hero_items: dict | None = None) -> Her
         damage_gain=damage_gain,
         hp_gain=hp_gain,
         spirit_gain=spirit_gain,
+        max_level_hp=max_level_hp,
+        max_gun_damage=max_gun_damage,
+        max_gun_dps=max_gun_dps,
         icon_url=icon_url,
         hero_card_url=hero_card_url,
         minimap_url=minimap_url,
@@ -234,16 +275,41 @@ def _parse_ability(item_data: dict) -> HeroAbility:
 
     upgrades = []
     raw_upgrades = item_data.get("upgrades", []) or []
-    for i, upg in enumerate(raw_upgrades):
-        if isinstance(upg, dict):
-            upg_desc = upg.get("description", "") or ""
-            upgrades.append(AbilityUpgrade(tier=i + 1, description=upg_desc))
 
-    if not upgrades and isinstance(desc, dict):
+    # Collect human-readable tier descriptions from the description dict
+    tier_descs: dict[int, str] = {}
+    if isinstance(desc, dict):
         for tier, key in [(1, "t1_desc"), (2, "t2_desc"), (3, "t3_desc")]:
             t_desc = desc.get(key, "")
             if t_desc:
-                upgrades.append(AbilityUpgrade(tier=tier, description=t_desc))
+                tier_descs[tier] = t_desc
+
+    for i, upg in enumerate(raw_upgrades):
+        if not isinstance(upg, dict):
+            continue
+        tier = i + 1
+        # Prefer human-readable description from the description dict
+        upg_desc = tier_descs.get(tier, "")
+        # Fall back to the upgrade's own description field
+        if not upg_desc:
+            upg_desc = upg.get("description", "") or ""
+        # Last resort: build from property_upgrades
+        if not upg_desc:
+            parts = []
+            for pu in upg.get("property_upgrades", []):
+                pname = pu.get("name", "")
+                bonus = pu.get("bonus", "")
+                if pname and bonus != "":
+                    parts.append(f"{pname}: {bonus}")
+            upg_desc = ", ".join(parts)
+        if upg_desc:
+            upgrades.append(AbilityUpgrade(tier=tier, description=upg_desc))
+
+    # If no upgrades from the array, still try tier descriptions
+    if not upgrades:
+        for tier in (1, 2, 3):
+            if tier in tier_descs:
+                upgrades.append(AbilityUpgrade(tier=tier, description=tier_descs[tier]))
 
     return HeroAbility(
         name=item_data.get("name", ""),
@@ -373,9 +439,12 @@ def load_heroes() -> dict[str, HeroStats]:
 
     heroes_data = load_cache("heroes")
     hero_items_data = load_cache("hero_items")
+    weapons_data = load_cache("weapons")
 
     if not heroes_data:
         raise RuntimeError("heroes cache is empty or corrupt.")
+
+    weapons_list = weapons_data if isinstance(weapons_data, list) else []
 
     heroes: dict[str, HeroStats] = {}
     for h in heroes_data:
@@ -383,7 +452,7 @@ def load_heroes() -> dict[str, HeroStats]:
             continue
         if h.get("disabled", False) or h.get("in_development", False):
             continue
-        hero = _parse_hero_from_api(h, hero_items_data)
+        hero = _parse_hero_from_api(h, hero_items_data, weapons_list)
         heroes[hero.name] = hero
 
     return heroes

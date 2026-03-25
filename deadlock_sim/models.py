@@ -58,6 +58,10 @@ class HeroStats:
     alt_fire_type: str = ""
     alt_fire_pellets: int = 1
 
+    # Melee
+    light_melee_damage: float = 0.0
+    heavy_melee_damage: float = 0.0
+
     # Survivability
     base_hp: float = 0.0
     base_regen: float = 0.0
