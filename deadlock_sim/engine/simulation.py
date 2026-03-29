@@ -62,7 +62,31 @@ class ItemBehaviorType(enum.Enum):
     DOT_ACTIVE = "dot_active"
     PULSE_PASSIVE = "pulse_passive"
     STACK_AMPLIFIER = "stack_amplifier"
-    RESIST_SHRED = "resist_shred"
+    DEBUFF_APPLIER = "debuff_applier"
+
+
+class DebuffType(enum.Enum):
+    """Mechanic-based debuff categories. Any item can contribute to these pools."""
+
+    SPIRIT_RESIST_SHRED = "spirit_resist_shred"
+    BULLET_RESIST_SHRED = "bullet_resist_shred"
+    SPIRIT_AMP_STACK = "spirit_amp_stack"  # EE-style: stacks amplify spirit damage
+    FIRE_RATE_SLOW = "fire_rate_slow"
+    MOVE_SPEED_SLOW = "move_speed_slow"
+    HEAL_REDUCTION = "heal_reduction"
+    DAMAGE_AMP = "damage_amp"  # crippling / soulshredder: target takes more damage
+
+
+@dataclass
+class DebuffInstance:
+    """A single debuff applied to the target, tracked by source and mechanic."""
+
+    debuff_type: DebuffType
+    source: str  # item or ability name that applied it
+    value: float  # the magnitude (e.g., 0.08 for 8% shred, 4.5 for 4.5% per stack)
+    expire_time: float  # when it falls off
+    stacks: int = 1  # for stackable debuffs (EE)
+    max_stacks: int = 1
 
 
 # ── Configuration ─────────────────────────────────────────────────
@@ -172,6 +196,11 @@ class ItemBehavior:
     debuff_duration: float = 0.0
     debuff_value: float = 0.0  # e.g., -8% spirit resist
 
+    # Mechanic-based debuffs this item applies (list of (DebuffType, value) pairs)
+    # These are applied on trigger (spirit damage, bullet hit, active use, etc.)
+    on_hit_debuffs: list[tuple[DebuffType, float, float]] = field(default_factory=list)
+    # Each entry: (DebuffType, value_per_application, duration)
+
     # Pulse items (Torment Pulse)
     pulse_damage: float = 0.0
     pulse_cooldown: float = 0.0
@@ -208,17 +237,74 @@ def _prop_scale(props: dict, key: str) -> tuple[str, float]:
     return (scale_type, stat_scale)
 
 
+def _collect_debuffs(props: dict, item_name: str) -> list[tuple[DebuffType, float, float]]:
+    """Extract all mechanic-based debuffs an item applies from its properties.
+
+    Returns list of (DebuffType, value, duration) tuples.
+    """
+    debuffs: list[tuple[DebuffType, float, float]] = []
+
+    # Spirit resist shred
+    if "TechArmorDamageReduction" in props:
+        val = _prop_float(props, "TechArmorDamageReduction")
+        if val != 0:
+            dur = _prop_float(props, "AbilityDuration", 7.0)
+            debuffs.append((DebuffType.SPIRIT_RESIST_SHRED, abs(val) / 100.0, max(dur, 1.0)))
+
+    # Bullet resist shred
+    if "BulletArmorDamageReduction" in props:
+        val = _prop_float(props, "BulletArmorDamageReduction")
+        if val != 0:
+            dur = _prop_float(props, "AbilityDuration", 7.0)
+            debuffs.append((DebuffType.BULLET_RESIST_SHRED, abs(val) / 100.0, max(dur, 1.0)))
+
+    # Fire rate slow
+    if "FireRateSlow" in props:
+        val = _prop_float(props, "FireRateSlow")
+        if val != 0:
+            dur = _prop_float(props, "AbilityDuration", 5.0)
+            debuffs.append((DebuffType.FIRE_RATE_SLOW, abs(val), max(dur, 1.0)))
+
+    # Move speed slow
+    if "SlowPercent" in props:
+        val = _prop_float(props, "SlowPercent")
+        if val != 0:
+            dur = _prop_float(props, "SlowDuration", _prop_float(props, "AbilityDuration", 4.0))
+            debuffs.append((DebuffType.MOVE_SPEED_SLOW, abs(val), max(dur, 1.0)))
+
+    # Heal reduction
+    if "HealAmpReceivePenaltyPercent" in props:
+        val = _prop_float(props, "HealAmpReceivePenaltyPercent")
+        if val != 0:
+            dur = _prop_float(props, "AbilityDuration", _prop_float(props, "DotDuration", 5.0))
+            debuffs.append((DebuffType.HEAL_REDUCTION, abs(val), max(dur, 1.0)))
+
+    # Damage amplification (crippling/soulshredder style)
+    if "DamageReceivedIncrease" in props:
+        val = _prop_float(props, "DamageReceivedIncrease")
+        if val != 0:
+            dur = _prop_float(props, "AbilityDuration", 5.0)
+            debuffs.append((DebuffType.DAMAGE_AMP, abs(val), max(dur, 1.0)))
+
+    return debuffs
+
+
 def classify_item(item: Item) -> ItemBehavior | None:
     """Classify an item into its simulation behavior type.
 
     Inspects raw_properties to determine how the item should be modeled
-    in the combat simulation. Returns None for passive-stat-only items.
+    in the combat simulation. Items are classified by their primary
+    mechanic, and all debuffs they apply are collected generically.
+    Returns None for passive-stat-only items.
     """
     props = item.raw_properties
     if not props:
         return None
 
-    # 1. Stack amplifiers (Escalating Exposure)
+    # Collect all mechanic debuffs this item applies
+    debuffs = _collect_debuffs(props, item.name)
+
+    # 1. Stack amplifiers (Escalating Exposure — has MagicIncreasePerStack)
     if "MagicIncreasePerStack" in props and "MaxStacks" in props:
         return ItemBehavior(
             item=item,
@@ -229,9 +315,10 @@ def classify_item(item: Item) -> ItemBehavior | None:
             debuff_duration=_prop_float(props, "AbilityDuration", 12.0),
             proc_cooldown=_prop_float(props, "ProcCooldown", 0.7),
             debuff_value=_prop_float(props, "TechArmorDamageReduction"),
+            on_hit_debuffs=debuffs,
         )
 
-    # 2. Buildup items (Toxic Bullets)
+    # 2. Buildup items (Toxic Bullets and others with BuildUpPerShot)
     if "BuildUpPerShot" in props:
         dot_dps = _prop_float(props, "DotHealthPercent")
         dot_scale_type, dot_scale = _prop_scale(props, "DotHealthPercent")
@@ -245,23 +332,11 @@ def classify_item(item: Item) -> ItemBehavior | None:
             dot_spirit_scale=dot_scale if dot_scale_type == "ETechPower" else 0.0,
             dot_duration=_prop_float(props, "DotDuration", 4.0),
             dot_tick_rate=_prop_float(props, "TickRate", 0.5),
-            dot_is_percent_hp=dot_dps > 0 and dot_dps < 20,  # heuristic: small = %HP
+            dot_is_percent_hp=dot_dps > 0 and dot_dps < 20,
+            on_hit_debuffs=debuffs,
         )
 
-    # 3. Resist shred debuffs (Mystic Vulnerability) — has TechArmorDamageReduction
-    #    but NOT MagicIncreasePerStack (which would be EE)
-    if "TechArmorDamageReduction" in props and "MagicIncreasePerStack" not in props:
-        dur = _prop_float(props, "AbilityDuration", 7.0)
-        if dur > 0:
-            return ItemBehavior(
-                item=item,
-                behavior_type=ItemBehaviorType.RESIST_SHRED,
-                damage_type=DamageType.SPIRIT,
-                debuff_duration=dur,
-                debuff_value=_prop_float(props, "TechArmorDamageReduction"),
-            )
-
-    # 4. Pulse items (Torment Pulse — auto-fires on cooldown)
+    # 3. Pulse items (Torment Pulse — auto-fires on cooldown)
     if "DamagePulseAmount" in props:
         scale_type, scale_val = _prop_scale(props, "DamagePulseAmount")
         return ItemBehavior(
@@ -271,9 +346,10 @@ def classify_item(item: Item) -> ItemBehavior | None:
             pulse_damage=_prop_float(props, "DamagePulseAmount"),
             pulse_cooldown=_prop_float(props, "AbilityCooldown", 1.4),
             pulse_spirit_scale=scale_val if scale_type == "ETechPower" else 0.0,
+            on_hit_debuffs=debuffs,
         )
 
-    # 5. Active DoT items (Decay, Alchemical Fire)
+    # 4. Active DoT items (Decay, Alchemical Fire)
     if item.is_active and ("DotHealthPercent" in props or "DPS" in props):
         dps_key = "DPS" if "DPS" in props else "DotHealthPercent"
         scale_type, scale_val = _prop_scale(props, dps_key)
@@ -286,9 +362,10 @@ def classify_item(item: Item) -> ItemBehavior | None:
             dot_duration=_prop_float(props, "AbilityDuration", 10.0),
             dot_tick_rate=_prop_float(props, "TickRate", 1.0),
             active_cooldown=_prop_float(props, "AbilityCooldown", 30.0),
+            on_hit_debuffs=debuffs,
         )
 
-    # 6. Proc-on-hit items (Tesla Bullets, Mystic Shot, Siphon Bullets)
+    # 5. Proc-on-hit items (Tesla Bullets, Mystic Shot, Siphon Bullets)
     if "ProcCooldown" in props:
         damage_info = DamageCalculator._extract_item_damage(props)
         if damage_info:
@@ -302,7 +379,20 @@ def classify_item(item: Item) -> ItemBehavior | None:
                 proc_damage=base_dmg,
                 spirit_scale=stat_scale if scale_type == "ETechPower" else 0.0,
                 boon_scale=stat_scale if scale_type == "ELevelUpBoons" else 0.0,
+                on_hit_debuffs=debuffs,
             )
+
+    # 6. Debuff-only items (Mystic Vulnerability, Spirit Shredder, etc.)
+    #    Items that primarily apply debuffs but don't deal damage directly
+    if debuffs:
+        return ItemBehavior(
+            item=item,
+            behavior_type=ItemBehaviorType.DEBUFF_APPLIER,
+            damage_type=DamageType.SPIRIT,
+            debuff_duration=debuffs[0][2],  # use first debuff's duration
+            on_hit_debuffs=debuffs,
+            proc_cooldown=_prop_float(props, "ProcCooldown", 0.0),
+        )
 
     # No simulation behavior — passive stat item
     return None
@@ -344,7 +434,8 @@ class TargetState:
     """Mutable state of the defender during the simulation.
 
     Tracks HP, shields, regen, and active debuffs applied by the attacker.
-    Initialized from defender HeroStats + defender Build.
+    Debuffs are tracked by mechanic type (not by item name) so any item
+    contributing to e.g. spirit_resist_shred feeds the same pool.
     """
 
     # Health
@@ -353,37 +444,82 @@ class TargetState:
     bullet_shield: float = 0.0
     spirit_shield: float = 0.0
     hp_regen: float = 0.0
+    base_fire_rate: float = 0.0  # defender's base fire rate (for slow calcs)
 
     # Base resists (from hero + items)
     base_bullet_resist: float = 0.0
     base_spirit_resist: float = 0.0
 
-    # Active resist shred debuffs: source_name -> (shred_amount, expire_time)
-    resist_shreds: dict[str, tuple[float, float]] = field(default_factory=dict)
+    # Mechanic-based debuff pool: all active debuffs on this target
+    debuffs: list[DebuffInstance] = field(default_factory=list)
 
-    # Amplification stacks on target: source_name -> (stacks, per_stack_pct, expire_time)
-    amp_stacks: dict[str, tuple[int, float, float]] = field(default_factory=dict)
+    # ── Debuff totals (computed from active debuffs) ──────────
+
+    def total_for(self, debuff_type: DebuffType, time: float) -> float:
+        """Sum all active debuff values of a given type (additive)."""
+        total = 0.0
+        for d in self.debuffs:
+            if d.debuff_type == debuff_type and d.expire_time > time:
+                total += d.value * d.stacks
+        return total
 
     def effective_bullet_resist(self, time: float) -> float:
-        """Current bullet resist — no dynamic shred system yet for bullet."""
-        return max(0.0, min(1.0, self.base_bullet_resist))
+        """Current bullet resist after all bullet resist shred debuffs."""
+        shred = min(1.0, self.total_for(DebuffType.BULLET_RESIST_SHRED, time))
+        return max(0.0, min(1.0, self.base_bullet_resist * (1.0 - shred)))
 
     def effective_spirit_resist(self, time: float) -> float:
-        """Current spirit resist after active debuffs (Mystic Vuln, EE shred)."""
-        shred_total = 0.0
-        for source, (amount, expire) in self.resist_shreds.items():
-            if expire > time:
-                shred_total += amount
-        shred_total = min(1.0, shred_total)
-        return max(0.0, self.base_spirit_resist * (1.0 - shred_total))
+        """Current spirit resist after all spirit resist shred debuffs."""
+        shred = min(1.0, self.total_for(DebuffType.SPIRIT_RESIST_SHRED, time))
+        return max(0.0, min(1.0, self.base_spirit_resist * (1.0 - shred)))
 
     def effective_spirit_amp(self, time: float) -> float:
-        """Spirit damage amp from stacks on target (e.g. Escalating Exposure)."""
-        total_pct = 0.0
-        for source, (stacks, per_stack, expire) in self.amp_stacks.items():
-            if expire > time:
-                total_pct += stacks * per_stack
-        return total_pct / 100.0  # convert percentage to multiplier
+        """Spirit damage amp from all amp stacks on target (EE, etc.)."""
+        return self.total_for(DebuffType.SPIRIT_AMP_STACK, time) / 100.0
+
+    def effective_damage_amp(self, time: float) -> float:
+        """Extra damage taken from crippling / soulshredder effects."""
+        return self.total_for(DebuffType.DAMAGE_AMP, time) / 100.0
+
+    def effective_heal_reduction(self, time: float) -> float:
+        """Heal/regen reduction on target (0-1 scale, clamped)."""
+        return min(1.0, self.total_for(DebuffType.HEAL_REDUCTION, time) / 100.0)
+
+    def effective_fire_rate_slow(self, time: float) -> float:
+        """Fire rate slow on target (percentage, for defender actions)."""
+        return self.total_for(DebuffType.FIRE_RATE_SLOW, time) / 100.0
+
+    def apply_debuff(
+        self, debuff_type: DebuffType, source: str, value: float,
+        duration: float, time: float, max_stacks: int = 1,
+    ) -> None:
+        """Apply or refresh a debuff. Stacking debuffs increment stacks."""
+        expire = time + duration
+        # Look for existing debuff from same source + type
+        for d in self.debuffs:
+            if d.debuff_type == debuff_type and d.source == source:
+                if max_stacks > 1:
+                    d.stacks = min(d.stacks + 1, max_stacks)
+                d.expire_time = expire  # refresh duration
+                return
+        # New debuff
+        self.debuffs.append(DebuffInstance(
+            debuff_type=debuff_type, source=source, value=value,
+            expire_time=expire, stacks=1, max_stacks=max_stacks,
+        ))
+
+    def cleanup_expired(self, time: float) -> None:
+        """Remove expired debuffs."""
+        self.debuffs = [d for d in self.debuffs if d.expire_time > time]
+
+    def debuff_summary(self, time: float) -> dict[str, float]:
+        """Return current totals for all debuff types (for reporting)."""
+        summary: dict[str, float] = {}
+        for dt in DebuffType:
+            val = self.total_for(dt, time)
+            if val != 0:
+                summary[dt.value] = val
+        return summary
 
 
 @dataclass
@@ -501,7 +637,8 @@ class CombatSimulator:
         # Behavior sub-lists for fast lookup
         self._proc_items: list[ItemBehavior] = []
         self._buildup_items: list[ItemBehavior] = []
-        self._spirit_trigger_items: list[ItemBehavior] = []  # EE, Mystic Vuln
+        self._stack_amplifiers: list[ItemBehavior] = []  # EE-style
+        self._debuff_items: list[ItemBehavior] = []  # all items with on_hit_debuffs
         self._pulse_items: list[ItemBehavior] = []
 
     # ── Public API ────────────────────────────────────────────
@@ -580,13 +717,13 @@ class CombatSimulator:
                 self._proc_items.append(b)
             elif b.behavior_type == ItemBehaviorType.BUILDUP:
                 self._buildup_items.append(b)
-            elif b.behavior_type in (
-                ItemBehaviorType.STACK_AMPLIFIER,
-                ItemBehaviorType.RESIST_SHRED,
-            ):
-                self._spirit_trigger_items.append(b)
+            elif b.behavior_type == ItemBehaviorType.STACK_AMPLIFIER:
+                self._stack_amplifiers.append(b)
             elif b.behavior_type == ItemBehaviorType.PULSE_PASSIVE:
                 self._pulse_items.append(b)
+            # All items with on_hit_debuffs go into the debuff list
+            if b.on_hit_debuffs:
+                self._debuff_items.append(b)
 
         # Seed events
         self._push(0.0, 0, EventType.BULLET_FIRE, "weapon")
@@ -686,10 +823,11 @@ class CombatSimulator:
             hs_mult = 1.0 + s.headshot_rate * (s.headshot_multiplier - 1.0)
             is_hs = s.headshot_rate > 0  # for logging: partial headshot
 
-        # Bullet resist
+        # Bullet resist + damage amp from debuffs on target
         resist = self.target.effective_bullet_resist(t)
+        damage_amp = self.target.effective_damage_amp(t)
         raw_dmg = atk.weapon_damage * hit_mult * hs_mult
-        final_dmg = raw_dmg * (1.0 - resist)
+        final_dmg = raw_dmg * (1.0 + damage_amp) * (1.0 - resist)
 
         if final_dmg > 0:
             self._apply_damage(t, "weapon", final_dmg, "bullet", is_hs)
@@ -697,8 +835,9 @@ class CombatSimulator:
         if is_hs and s.headshot_rate > 0:
             self._headshots += 1
 
-        # Trigger on-hit items
+        # Trigger on-hit items and bullet-triggered debuffs
         self._on_bullet_hit(t)
+        self._on_bullet_damage(t)
 
         # Schedule next bullet
         if atk.fire_rate > 0:
@@ -861,56 +1000,80 @@ class CombatSimulator:
             self._dead = True
 
     def _apply_spirit_damage(self, t: float, source: str, raw_damage: float) -> None:
-        """Apply spirit damage with dynamic resist, amp, and cross-interaction triggers.
+        """Apply spirit damage with all mechanic-based modifiers.
 
-        This is the central point for all spirit damage. It:
-        1. Reads current EE stacks for spirit amp
-        2. Reads current Mystic Vuln / resist shred for resist
-        3. Applies attacker spirit amp
-        4. Computes final damage
-        5. Triggers _on_spirit_damage for EE stacking / debuff refresh
+        Central point for all spirit damage. Reads totals from target debuffs:
+        1. Spirit amp stacks (EE) + attacker spirit amp
+        2. Spirit resist shred (Mystic Vuln, EE shred, etc.)
+        3. Damage amp (crippling/soulshredder effects)
+        Then triggers _on_spirit_damage to apply/refresh debuffs.
         """
-        # Spirit amp: attacker base + target amp stacks (EE)
+        # Spirit amp: attacker base + amp stacks on target (EE etc.)
         target_amp = self.target.effective_spirit_amp(t)
         total_amp = self.attacker.spirit_amp + target_amp
 
-        # Spirit resist after shred debuffs
+        # Spirit resist after all shred debuffs
         resist = self.target.effective_spirit_resist(t)
 
-        final = raw_damage * (1.0 + total_amp) * (1.0 - resist)
+        # Damage amp on target (crippling / soulshredder)
+        damage_amp = self.target.effective_damage_amp(t)
+
+        final = raw_damage * (1.0 + total_amp) * (1.0 + damage_amp) * (1.0 - resist)
 
         if final > 0:
             self._apply_damage(t, source, final, "spirit")
 
-        # Trigger on-spirit-damage effects (EE stacks, Mystic Vuln refresh)
+        # Trigger on-spirit-damage effects
         self._on_spirit_damage(t)
 
     def _on_spirit_damage(self, t: float) -> None:
-        """Called after any spirit damage is dealt. Handles cross-item triggers."""
-        for b in self._spirit_trigger_items:
+        """Called after any spirit damage. Applies all on-spirit-damage debuffs."""
+        # Stack amplifiers (EE-style): add stacks
+        for b in self._stack_amplifiers:
             name = b.item.name
+            next_avail = self.attacker.proc_cooldowns.get(name, 0.0)
+            if t < next_avail:
+                continue
+            # Apply spirit amp stack
+            self.target.apply_debuff(
+                DebuffType.SPIRIT_AMP_STACK, name, b.stack_value,
+                b.debuff_duration, t, max_stacks=b.max_stacks,
+            )
+            self.attacker.proc_cooldowns[name] = t + b.proc_cooldown
 
-            if b.behavior_type == ItemBehaviorType.STACK_AMPLIFIER:
-                # Escalating Exposure: add stack, refresh duration
+        # Apply all on_hit_debuffs from items triggered by spirit damage
+        for b in self._debuff_items:
+            name = b.item.name
+            # Skip items with proc cooldowns that aren't ready
+            if b.proc_cooldown > 0:
                 next_avail = self.attacker.proc_cooldowns.get(name, 0.0)
                 if t < next_avail:
                     continue
-                current = self.target.amp_stacks.get(name, (0, b.stack_value, 0.0))
-                new_stacks = min(current[0] + 1, b.max_stacks)
-                expire = t + b.debuff_duration
-                self.target.amp_stacks[name] = (new_stacks, b.stack_value, expire)
                 self.attacker.proc_cooldowns[name] = t + b.proc_cooldown
+            for debuff_type, value, duration in b.on_hit_debuffs:
+                max_stk = b.max_stacks if b.max_stacks > 0 else 1
+                self.target.apply_debuff(debuff_type, name, value, duration, t, max_stk)
 
-                # Also apply resist shred if EE has it
-                if b.debuff_value != 0:
-                    shred_amount = abs(b.debuff_value) / 100.0
-                    self.target.resist_shreds[name] = (shred_amount, expire)
-
-            elif b.behavior_type == ItemBehaviorType.RESIST_SHRED:
-                # Mystic Vulnerability: apply/refresh spirit resist shred
-                shred_amount = abs(b.debuff_value) / 100.0
-                expire = t + b.debuff_duration
-                self.target.resist_shreds[name] = (shred_amount, expire)
+    def _on_bullet_damage(self, t: float) -> None:
+        """Called after bullet damage. Applies bullet-triggered debuffs."""
+        # Apply on_hit_debuffs that are on bullet-type or DEBUFF_APPLIER items
+        for b in self._debuff_items:
+            # Only apply from items that trigger on bullet hit
+            # (DEBUFF_APPLIER items and bullet-type procs)
+            if b.behavior_type not in (
+                ItemBehaviorType.DEBUFF_APPLIER,
+                ItemBehaviorType.BUILDUP,
+            ):
+                continue
+            name = b.item.name
+            if b.proc_cooldown > 0:
+                next_avail = self.attacker.proc_cooldowns.get(name, 0.0)
+                if t < next_avail:
+                    continue
+                self.attacker.proc_cooldowns[name] = t + b.proc_cooldown
+            for debuff_type, value, duration in b.on_hit_debuffs:
+                max_stk = b.max_stacks if b.max_stacks > 0 else 1
+                self.target.apply_debuff(debuff_type, name, value, duration, t, max_stk)
 
     # ── Active items ──────────────────────────────────────────
 
@@ -1025,9 +1188,10 @@ class CombatSimulator:
         else:
             raw = self.attacker.light_melee_damage
 
-        # Melee uses bullet resist
+        # Melee uses bullet resist + damage amp
         resist = self.target.effective_bullet_resist(t)
-        final = raw * (1.0 - resist)
+        damage_amp = self.target.effective_damage_amp(t)
+        final = raw * (1.0 + damage_amp) * (1.0 - resist)
 
         if final > 0:
             self._apply_damage(t, source, final, "melee")
@@ -1035,13 +1199,18 @@ class CombatSimulator:
     # ── Regen ─────────────────────────────────────────────────
 
     def _handle_regen_tick(self, event: SimEvent) -> None:
-        """Heal the target by their regen amount (1s tick)."""
+        """Heal the target by their regen amount, reduced by heal reduction debuffs."""
         t = event.time
         if self._dead:
             return
 
-        heal = self.target.hp_regen
+        # Apply heal reduction mechanic
+        heal_reduction = self.target.effective_heal_reduction(t)
+        heal = self.target.hp_regen * (1.0 - heal_reduction)
         self.target.hp = min(self.target.max_hp, self.target.hp + heal)
+
+        # Clean up expired debuffs periodically
+        self.target.cleanup_expired(t)
 
         # Schedule next regen
         if t + 1.0 <= self.settings.duration:
