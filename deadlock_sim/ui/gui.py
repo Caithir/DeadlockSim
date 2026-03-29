@@ -32,6 +32,10 @@ _items: dict[str, Item] = {}
 _item_names: list[str] = []
 _build_items: list[Item] = []
 
+# Shared build context (set by Build tab, read by Simulation tab)
+_build_hero_name: str = ""
+_build_boons: int = 0
+
 # ── Image mapping ─────────────────────────────────────────────────
 
 _ITEM_IMAGE: dict[str, str] = {
@@ -326,9 +330,9 @@ def _build_tooltip_html(item: Item) -> str:
                                     f'line-height:1.6;">{txt}</div>'
                                 )
 
-                # Passive/Active section
-                elif sec_type in ("passive", "active"):
-                    label = sec_type.capitalize()
+                # Passive/Active section (or missing section_type)
+                elif sec_type in ("passive", "active", ""):
+                    label = sec_type.capitalize() if sec_type else "Passive"
                     html += (
                         f'<div style="color:#888;font-size:11px;font-weight:bold;'
                         f'text-transform:uppercase;letter-spacing:0.08em;'
@@ -2146,6 +2150,9 @@ def _build_eval_tab() -> None:
 
     # ── Event wiring ──────────────────────────────────────────────
     def _on_hero_boons(_=None):
+        global _build_hero_name, _build_boons
+        _build_hero_name = bld_hero.value or ""
+        _build_boons = int(bld_boons.value or 0)
         refresh_build_display()   # updates hero summary + ability grid too
         update_results()
         if _is_dynamic_sort():
@@ -2157,6 +2164,11 @@ def _build_eval_tab() -> None:
     bld_hero.on_value_change(_on_hero_boons)
     bld_boons.on_value_change(_on_hero_boons)
     bld_acc.on_value_change(update_results)
+
+    # Initialize shared build state
+    global _build_hero_name, _build_boons
+    _build_hero_name = bld_hero.value or ""
+    _build_boons = int(bld_boons.value or 0)
 
     refresh_build_display()
     update_results()
@@ -2242,8 +2254,11 @@ def _build_optimizer_tab() -> None:
 
 
 def _build_simulation_tab() -> None:
-    # Separate build item lists for attacker and defender
-    sim_atk_items: list[Item] = []
+    """Simulation tab that uses the Build tab's attacker build.
+
+    The attacker hero + items come from the Build tab (shared global state).
+    This tab only configures the defender and simulation settings.
+    """
     sim_def_items: list[Item] = []
 
     with ui.row().classes("w-full gap-6 items-start").style("min-height: 660px;"):
@@ -2253,34 +2268,43 @@ def _build_simulation_tab() -> None:
             "width:360px; min-width:320px; padding:0 12px 8px 0;"
             "border-right:1px solid #1e1e1e; gap:0;"
         ):
-            # ── Attacker config ──────────────────────────────────
-            ui.element("div").classes("bl-section-header").text = "ATTACKER"
-            with ui.row().classes("items-end gap-2 flex-wrap"):
-                sim_atk_hero = ui.select(
-                    options=_hero_names,
-                    value=_hero_names[0] if _hero_names else "",
-                    label="Hero",
-                ).classes("w-44")
-                sim_atk_boons = ui.number(
-                    label="Boons", value=10, min=0, max=50, step=1,
-                ).classes("w-20")
+            # ── Attacker (from Build tab) ────────────────────────
+            ui.element("div").classes("bl-section-header").text = "ATTACKER (FROM BUILD TAB)"
+            sim_atk_summary = ui.column().classes("w-full gap-1")
 
-            # Attacker build slots
-            sim_atk_grid = ui.element("div").classes("bl-item-grid")
-            sim_atk_label = ui.label("0 items").style(
-                "color:#888; font-size:10px; margin-top:2px;"
-            )
-
-            # Item picker for attacker
-            with ui.row().classes("items-end gap-2 flex-wrap mt-1"):
-                sim_atk_item_pick = ui.select(
-                    options=_item_names, label="Add Item",
-                    with_input=True,
-                ).classes("w-52")
-                ui.button("+", on_click=lambda: _add_atk_item()).props("dense").classes("mt-auto")
-                ui.button("Clear", on_click=lambda: _clear_atk()).props("dense flat").style(
-                    "font-size:10px; color:#888;"
-                )
+            def _refresh_atk_summary():
+                sim_atk_summary.clear()
+                hero = _heroes.get(_build_hero_name)
+                with sim_atk_summary:
+                    if hero:
+                        _render_hero_summary_with_tooltips(hero)
+                        n = len(_build_items)
+                        cost = sum(i.cost for i in _build_items)
+                        ui.label(
+                            f"{n} items | {cost:,} souls | {_build_boons} boons"
+                        ).style("color:#888; font-size:11px;")
+                        if _build_items:
+                            with ui.element("div").classes("bl-item-grid"):
+                                for item in _build_items:
+                                    colors = _CAT_COLORS.get(item.category, _CAT_COLORS["weapon"])
+                                    with ui.element("div").classes("bl-slot-filled").style(
+                                        f"border-color:{colors['border']}; background:{colors['bg']};"
+                                    ):
+                                        ui.image(_item_image_url(item)).style(
+                                            "width:36px; height:36px; object-fit:contain;"
+                                        )
+                                        with ui.tooltip().style(
+                                            f"background:{colors['bg']}; border:1px solid {colors['border']};"
+                                            "padding:8px 12px; border-radius:6px;"
+                                        ):
+                                            ui.html(_build_tooltip_html(item))
+                    else:
+                        ui.label("No hero selected in Build tab").style(
+                            "color:#ff6b6b; font-size:12px;"
+                        )
+                        ui.label("Go to the Build tab to select a hero and items.").style(
+                            "color:#888; font-size:11px;"
+                        )
 
             ui.separator().style("margin:8px 0;")
 
@@ -2339,72 +2363,65 @@ def _build_simulation_tab() -> None:
 
     # ── Helper functions ─────────────────────────────────────────
 
-    def _render_build_grid(grid_el, items: list[Item], remove_fn):
-        grid_el.clear()
-        with grid_el:
-            for i, item in enumerate(items):
+    def _render_def_grid():
+        sim_def_grid.clear()
+        with sim_def_grid:
+            for i, item in enumerate(sim_def_items):
                 colors = _CAT_COLORS.get(item.category, _CAT_COLORS["weapon"])
                 with ui.element("div").classes("bl-slot-filled").style(
                     f"border-color:{colors['border']}; background:{colors['bg']};"
-                ).on("click", lambda _, idx=i: remove_fn(idx)):
+                ).on("click", lambda _, idx=i: _remove_def_item(idx)):
                     ui.image(_item_image_url(item)).style(
                         "width:40px; height:40px; object-fit:contain;"
                     )
                     ui.element("div").classes("bl-slot-cost").style(
                         f"color:{colors['text']};"
                     ).text = f"{item.cost:,}"
-            # Empty slots
-            filled = len(items)
+                    with ui.tooltip().style(
+                        f"background:{colors['bg']}; border:1px solid {colors['border']};"
+                        "padding:8px 12px; border-radius:6px;"
+                    ):
+                        ui.html(_build_tooltip_html(item))
+            filled = len(sim_def_items)
             for _ in range(max(0, 6 - filled)):
                 ui.element("div").classes("bl-slot-empty")
-
-    def _add_atk_item():
-        name = sim_atk_item_pick.value
-        item = _items.get(name)
-        if item and not any(i.name == name for i in sim_atk_items):
-            sim_atk_items.append(item)
-            _render_build_grid(sim_atk_grid, sim_atk_items, _remove_atk_item)
-            sim_atk_label.text = f"{len(sim_atk_items)} items ({sum(i.cost for i in sim_atk_items):,} souls)"
-
-    def _remove_atk_item(idx: int):
-        if 0 <= idx < len(sim_atk_items):
-            sim_atk_items.pop(idx)
-            _render_build_grid(sim_atk_grid, sim_atk_items, _remove_atk_item)
-            sim_atk_label.text = f"{len(sim_atk_items)} items ({sum(i.cost for i in sim_atk_items):,} souls)"
-
-    def _clear_atk():
-        sim_atk_items.clear()
-        _render_build_grid(sim_atk_grid, sim_atk_items, _remove_atk_item)
-        sim_atk_label.text = "0 items"
 
     def _add_def_item():
         name = sim_def_item_pick.value
         item = _items.get(name)
         if item and not any(i.name == name for i in sim_def_items):
             sim_def_items.append(item)
-            _render_build_grid(sim_def_grid, sim_def_items, _remove_def_item)
+            _render_def_grid()
             sim_def_label.text = f"{len(sim_def_items)} items ({sum(i.cost for i in sim_def_items):,} souls)"
 
     def _remove_def_item(idx: int):
         if 0 <= idx < len(sim_def_items):
             sim_def_items.pop(idx)
-            _render_build_grid(sim_def_grid, sim_def_items, _remove_def_item)
+            _render_def_grid()
             sim_def_label.text = f"{len(sim_def_items)} items ({sum(i.cost for i in sim_def_items):,} souls)"
 
     def _clear_def():
         sim_def_items.clear()
-        _render_build_grid(sim_def_grid, sim_def_items, _remove_def_item)
+        _render_def_grid()
         sim_def_label.text = "0 items"
 
     def _run_sim():
-        atk_hero = _heroes.get(sim_atk_hero.value)
+        atk_hero = _heroes.get(_build_hero_name)
         def_hero = _heroes.get(sim_def_hero.value)
-        if not atk_hero or not def_hero:
+        if not atk_hero:
+            sim_results_area.clear()
+            with sim_results_area:
+                ui.label("No attacker hero selected.").style("color:#ff6b6b;")
+                ui.label("Go to the Build tab to select a hero and items first.").style(
+                    "color:#888; font-size:12px;"
+                )
+            return
+        if not def_hero:
             return
 
         config = SimConfig(
             attacker=atk_hero,
-            attacker_build=Build(items=list(sim_atk_items)),
+            attacker_build=Build(items=list(_build_items)),
             defender=def_hero,
             defender_build=Build(items=list(sim_def_items)),
             settings=SimSettings(
@@ -2415,7 +2432,7 @@ def _build_simulation_tab() -> None:
                 ability_uptime=(sim_ability_up.value or 100) / 100.0,
                 weave_melee=bool(sim_melee_weave.value),
                 melee_after_reload=bool(sim_heavy_reload.value),
-                attacker_boons=int(sim_atk_boons.value or 0),
+                attacker_boons=_build_boons,
                 defender_boons=int(sim_def_boons.value or 0),
             ),
         )
@@ -2426,6 +2443,12 @@ def _build_simulation_tab() -> None:
     def _render_results(result: SimResult, atk_hero: HeroStats, def_hero: HeroStats):
         sim_results_area.clear()
         with sim_results_area:
+            # ── Matchup header ───────────────────────────────────
+            ui.label(
+                f"{atk_hero.name} ({len(_build_items)} items, {_build_boons} boons) vs "
+                f"{def_hero.name} ({len(sim_def_items)} items)"
+            ).style("color:#e8c252; font-size:12px; font-weight:600; margin-bottom:4px;")
+
             # ── Summary header ───────────────────────────────────
             kill_text = (
                 f"Target killed at {result.kill_time:.2f}s"
@@ -2445,7 +2468,7 @@ def _build_simulation_tab() -> None:
                     ("DURATION", f"{result.total_duration:.1f}s", "#e8c252"),
                 ]:
                     with ui.element("div"):
-                        ui.element("div").style(f"font-size:9px; color:#888; font-weight:700;").text = lbl
+                        ui.element("div").style("font-size:9px; color:#888; font-weight:700;").text = lbl
                         ui.element("div").style(f"font-size:18px; color:{color}; font-weight:700;").text = val
 
             ui.label(kill_text).style(f"color:{kill_color}; font-size:13px; font-weight:600;")
@@ -2549,9 +2572,9 @@ def _build_simulation_tab() -> None:
                 "backgroundColor": "transparent",
             }).classes("w-full h-56")
 
-    sim_run_btn.on("click", _run_sim)
-    _render_build_grid(sim_atk_grid, sim_atk_items, _remove_atk_item)
-    _render_build_grid(sim_def_grid, sim_def_items, _remove_def_item)
+    sim_run_btn.on("click", lambda: (_refresh_atk_summary(), _run_sim()))
+    _render_def_grid()
+    _refresh_atk_summary()
 
 
 # ── Simulation-based item scoring for Build tab ────────────────
