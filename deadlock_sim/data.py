@@ -245,6 +245,27 @@ def _parse_ability(item_data: dict) -> HeroAbility:
     duration = 0.0
     spirit_scaling = 0.0
 
+    # Priority-ordered keys that indicate ability damage output
+    _ABILITY_DAMAGE_KEYS = [
+        "AbilityDamage",
+        "Damage",
+        "DPS",
+        "DamagePerSecond",
+        "DamagePerProjectile",
+        "DamagePerRocket",
+        "ExplodeDamage",
+        "StompDamage",
+        "TurretDPS",
+        "SummonDPS",
+        "SummonMeleeDamage",
+        "BleedDPSPerStack",
+        "TechDamage",
+        "BulletDamage",
+        "BonusDamage",
+        "CurrentHealthDamage",
+        "MaxHealthDamage",
+    ]
+
     for key, prop in props.items():
         if not isinstance(prop, dict):
             continue
@@ -257,9 +278,7 @@ def _parse_ability(item_data: dict) -> HeroAbility:
             continue
 
         key_lower = key.lower()
-        if "damage" in key_lower and "reduction" not in key_lower and base_damage == 0:
-            base_damage = fval
-        elif "cooldown" in key_lower and cooldown == 0:
+        if "cooldown" in key_lower and cooldown == 0:
             cooldown = fval
         elif "duration" in key_lower and duration == 0:
             duration = fval
@@ -272,6 +291,37 @@ def _parse_ability(item_data: dict) -> HeroAbility:
                     spirit_scaling = float(stat_scale)
                 except (ValueError, TypeError):
                     pass
+
+    # Extract damage using priority-ordered key list, then fall back to
+    # any property containing "damage" in its name
+    for dkey in _ABILITY_DAMAGE_KEYS:
+        prop = props.get(dkey)
+        if isinstance(prop, dict):
+            val = prop.get("value")
+            if val is not None:
+                try:
+                    base_damage = float(val)
+                    # If this is a DPS property and we have a duration, it's total damage
+                    if "DPS" in dkey and duration > 0:
+                        base_damage = base_damage * duration
+                    break
+                except (ValueError, TypeError):
+                    pass
+
+    if base_damage == 0:
+        # Fallback: scan for any property with "damage" in the name
+        for key, prop in props.items():
+            if not isinstance(prop, dict):
+                continue
+            key_lower = key.lower()
+            if "damage" in key_lower and "reduction" not in key_lower:
+                val = prop.get("value")
+                if val is not None:
+                    try:
+                        base_damage = float(val)
+                        break
+                    except (ValueError, TypeError):
+                        pass
 
     upgrades = []
     raw_upgrades = item_data.get("upgrades", []) or []

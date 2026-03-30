@@ -699,10 +699,50 @@ def _render_item_card(
     on_click_fn,
     score: float | None = None,
     score_suffix: str = "",
+    score_detail: dict | None = None,
 ) -> None:
-    """Render a shop item as a card: icon + name + optional score badge + tooltip."""
+    """Render a shop item as a card: icon + name + optional score badge + tooltip.
+
+    score_detail: optional dict of score metrics to append to the tooltip
+                  (e.g. {"sim_dps_delta": 12.3, "sim_ehp_delta": 5.0}).
+    """
     colors = _CAT_COLORS.get(item.category, _CAT_COLORS["weapon"])
     tooltip_inner = _build_tooltip_html(item)
+
+    # Append DPS/EHP delta info to tooltip if available
+    if score_detail:
+        tooltip_inner += (
+            '<div style="margin-top:8px;padding-top:6px;'
+            'border-top:1px solid rgba(255,255,255,0.15);">'
+            '<div style="color:#888;font-size:10px;font-weight:bold;'
+            'text-transform:uppercase;letter-spacing:0.08em;margin-bottom:3px;">'
+            'IMPACT</div>'
+        )
+        _score_labels = {
+            "sim_dps_delta": ("DPS", "#4fc3f7"),
+            "sim_ehp_delta": ("EHP", "#81c784"),
+            "sim_dps_per_soul": ("DPS/1k Souls", "#4fc3f7"),
+            "sim_ehp_per_soul": ("EHP/1k Souls", "#81c784"),
+            "dps_delta": ("Gun DPS", "#4fc3f7"),
+            "ehp_delta": ("EHP", "#81c784"),
+            "spirit_delta": ("Spirit Power", "#ce93d8"),
+            "dps_per_soul": ("DPS/1k Souls", "#4fc3f7"),
+            "ehp_per_soul": ("EHP/1k Souls", "#81c784"),
+        }
+        for key, val in score_detail.items():
+            if abs(val) < 0.01:
+                continue
+            label, color = _score_labels.get(key, (key, "#ccc"))
+            sign = "+" if val > 0 else ""
+            if "soul" in key.lower():
+                display = f"{sign}{val * 1000:.1f}"
+            else:
+                display = f"{sign}{val:.1f}"
+            tooltip_inner += (
+                f'<div style="color:{color};font-size:12px;line-height:1.6;">'
+                f'{label}: <b>{display}</b></div>'
+            )
+        tooltip_inner += '</div>'
 
     # Active badge overlay
     active_badge = ""
@@ -1922,7 +1962,8 @@ def _build_eval_tab() -> None:
                                             sc.get(active_score_key, 0) if sc else 0,
                                             sort_name, score_suffix
                                         ) if (is_scored and sc) else None
-                                        _render_item_card(item, add_item, score=sv, score_suffix=score_suffix)
+                                        _render_item_card(item, add_item, score=sv, score_suffix=score_suffix,
+                                                         score_detail=sc if is_scored else None)
                 else:
                     with ui.element("div").classes("shop-card-grid"):
                         for item in filtered:
@@ -1931,7 +1972,8 @@ def _build_eval_tab() -> None:
                                 sc.get(active_score_key, 0) if sc else 0,
                                 sort_name, score_suffix
                             ) if (is_scored and sc) else None
-                            _render_item_card(item, add_item, score=sv, score_suffix=score_suffix)
+                            _render_item_card(item, add_item, score=sv, score_suffix=score_suffix,
+                                             score_detail=sc if is_scored else None)
 
     def _is_dynamic_sort():
         return sort_select.value in _IMPACT_SORT_KEYS or sort_select.value in _SIM_SORT_KEYS
@@ -2997,10 +3039,13 @@ def _sim_item_scores(
     """
     dummy = HeroStats(name="Dummy Target", base_hp=2500, base_regen=0)
 
-    # Build settings from global config, override ability uptime per mode
+    # Build settings from global config, override uptime per mode
     base_settings = _get_sim_settings(atk_boons=boons, def_boons=0)
     if mode == "gun":
         base_settings.ability_uptime = 0.0
+    elif mode == "spirit":
+        base_settings.weapon_uptime = 0.0
+        base_settings.ability_uptime = 1.0
     # Use shorter duration for scoring (performance)
     base_settings.duration = min(base_settings.duration, 10.0)
 
