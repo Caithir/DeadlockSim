@@ -213,6 +213,43 @@ class TTKResult:
 
 
 @dataclass
+class MeleeResult:
+    """Output of a melee damage calculation."""
+
+    light_damage: float  # per-hit light melee damage after bonuses
+    heavy_damage: float  # per-hit heavy melee damage after bonuses
+    light_dps: float  # light melee DPS (damage / cycle time)
+    heavy_dps: float  # heavy melee DPS (damage / cycle time)
+
+
+@dataclass
+class ItemDamageResult:
+    """Output of an individual item's damage calculation."""
+
+    item_name: str
+    damage_per_hit: float  # damage per proc/hit/tick
+    dps: float  # effective DPS accounting for proc rate / cooldown
+    damage_type: str  # "spirit", "bullet", or "melee"
+    scaled_from: str  # what stat it scales from: "spirit", "boons", "weapon"
+    spirit_contribution: float = 0.0  # portion from spirit scaling
+    boon_contribution: float = 0.0  # portion from boon scaling
+
+
+@dataclass
+class AbilityDamageResult:
+    """Output of a hero ability damage calculation with boon context."""
+
+    ability_name: str
+    raw_damage: float  # base + spirit contribution
+    modified_damage: float  # after amp, items, resist
+    spirit_contribution: float
+    dps: float  # damage / cooldown or damage / duration
+    effective_cooldown: float
+    boons: int
+    current_spirit: float
+
+
+@dataclass
 class ScalingSnapshot:
     """Hero stats at a specific boon level."""
 
