@@ -102,17 +102,28 @@ class DamageCalculator:
         t_shred = cls.total_shred(config.shred)
         f_resist = cls.final_resist(config.enemy_bullet_resist, t_shred)
 
-        # Final DPS after resist
+        # Final DPS after resist (burst — ignores reload)
         final_dps = raw_dps * (1.0 - f_resist)
+
+        # Sustained DPS including reload downtime
+        reload_time = hero.reload_duration if hero.reload_duration > 0 else 0.0
+        cycle_time = magdump_time + reload_time
+        if cycle_time > 0 and mag_size > 0:
+            final_dmg_per_mag = dmg_per_mag * (1.0 - f_resist)
+            sustained_dps = final_dmg_per_mag / cycle_time
+        else:
+            sustained_dps = final_dps
 
         return BulletResult(
             damage_per_bullet=dmg_per_bullet,
             bullets_per_second=bps,
             raw_dps=raw_dps,
             final_dps=final_dps,
+            sustained_dps=sustained_dps,
             magazine_size=mag_size,
             damage_per_magazine=dmg_per_mag,
             magdump_time=magdump_time,
+            reload_time=reload_time,
             total_shred=t_shred,
             final_resist=f_resist,
         )

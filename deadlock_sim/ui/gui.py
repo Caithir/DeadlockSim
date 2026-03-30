@@ -244,11 +244,11 @@ _SORT_OPTIONS = {
 
 # Impact sorts — computed per-hero/boon context; mapped to the score dict key
 _IMPACT_SORT_KEYS: dict[str, str] = {
-    "★ Gun DPS Δ":    "dps_delta",
-    "★ EHP Δ":        "ehp_delta",
-    "★ Spirit Power": "spirit_delta",
-    "★ DPS / Soul":   "dps_per_soul",
-    "★ EHP / Soul":   "ehp_per_soul",
+    "★ Gun DPS Δ":      "dps_delta",
+    "★ Spirit DPS Δ":   "spirit_delta",
+    "★ EHP Δ":          "ehp_delta",
+    "★ DPS / Soul":     "dps_per_soul",
+    "★ EHP / Soul":     "ehp_per_soul",
 }
 
 # Simulation-based impact sorts
@@ -1851,22 +1851,36 @@ def _build_eval_tab() -> None:
         cur_build = Build(items=list(_build_items))
         cur_stats = BuildEngine.aggregate_stats(cur_build)
         cur_cfg   = BuildEngine.build_to_attacker_config(cur_stats, boons=boons_val)
-        cur_dps   = DamageCalculator.calculate_bullet(hero, cur_cfg).raw_dps
+        cur_gun   = DamageCalculator.calculate_bullet(hero, cur_cfg).sustained_dps
+        cur_spirit = DamageCalculator.hero_total_spirit_dps(
+            hero,
+            current_spirit=int(cur_stats.spirit_power + hero.spirit_gain * boons_val),
+            cooldown_reduction=cur_stats.cooldown_reduction,
+            spirit_amp=cur_stats.spirit_amp_pct,
+            resist_shred=cur_stats.spirit_resist_shred,
+        )
         cur_ehp   = (hero.base_hp + hero.hp_gain * boons_val
                      + cur_stats.bonus_hp + cur_stats.bullet_shield)
         scores: dict = {}
         for item in filtered_items:
             t_stats = BuildEngine.aggregate_stats(Build(items=list(_build_items) + [item]))
             t_cfg   = BuildEngine.build_to_attacker_config(t_stats, boons=boons_val)
-            dps_d   = DamageCalculator.calculate_bullet(hero, t_cfg).raw_dps - cur_dps
+            gun_d   = DamageCalculator.calculate_bullet(hero, t_cfg).sustained_dps - cur_gun
+            spirit_d = DamageCalculator.hero_total_spirit_dps(
+                hero,
+                current_spirit=int(t_stats.spirit_power + hero.spirit_gain * boons_val),
+                cooldown_reduction=t_stats.cooldown_reduction,
+                spirit_amp=t_stats.spirit_amp_pct,
+                resist_shred=t_stats.spirit_resist_shred,
+            ) - cur_spirit
             ehp_d   = (hero.base_hp + hero.hp_gain * boons_val
                        + t_stats.bonus_hp + t_stats.bullet_shield) - cur_ehp
             cost    = item.cost or 1
             scores[item.name] = {
-                "dps_delta":    dps_d,
+                "dps_delta":    gun_d,
                 "ehp_delta":    ehp_d,
-                "spirit_delta": item.spirit_power,
-                "dps_per_soul": dps_d / cost,
+                "spirit_delta": spirit_d,
+                "dps_per_soul": gun_d / cost,
                 "ehp_per_soul": ehp_d / cost,
             }
         return scores
@@ -1892,6 +1906,12 @@ def _build_eval_tab() -> None:
         scores: dict = {}
         score_suffix = ""
         active_score_key = ""
+
+        # Always compute impact scores for tooltips when a hero is selected
+        impact_scores: dict = {}
+        if _heroes.get(bld_hero.value):
+            impact_scores = _compute_impact_scores(filtered)
+
         if is_sim:
             hero = _heroes.get(bld_hero.value)
             if hero:
@@ -1903,7 +1923,7 @@ def _build_eval_tab() -> None:
                 if "Soul" in sort_name:
                     score_suffix = "/k"
         elif is_impact:
-            scores = _compute_impact_scores(filtered)
+            scores = impact_scores
             active_score_key = _IMPACT_SORT_KEYS[sort_name]
             filtered.sort(key=lambda i: -scores.get(i.name, {}).get(active_score_key, 0))
             if "Soul" in sort_name:
@@ -1962,8 +1982,10 @@ def _build_eval_tab() -> None:
                                             sc.get(active_score_key, 0) if sc else 0,
                                             sort_name, score_suffix
                                         ) if (is_scored and sc) else None
+                                        # Use sim scores when available, otherwise impact scores
+                                        detail = sc if is_sim else impact_scores.get(item.name)
                                         _render_item_card(item, add_item, score=sv, score_suffix=score_suffix,
-                                                         score_detail=sc if is_scored else None)
+                                                         score_detail=detail)
                 else:
                     with ui.element("div").classes("shop-card-grid"):
                         for item in filtered:
@@ -1972,8 +1994,9 @@ def _build_eval_tab() -> None:
                                 sc.get(active_score_key, 0) if sc else 0,
                                 sort_name, score_suffix
                             ) if (is_scored and sc) else None
+                            detail = sc if is_sim else impact_scores.get(item.name)
                             _render_item_card(item, add_item, score=sv, score_suffix=score_suffix,
-                                             score_detail=sc if is_scored else None)
+                                             score_detail=detail)
 
     def _is_dynamic_sort():
         return sort_select.value in _IMPACT_SORT_KEYS or sort_select.value in _SIM_SORT_KEYS
@@ -2100,7 +2123,7 @@ def _build_eval_tab() -> None:
                     "display:grid; grid-template-columns:1fr 1fr 1fr; gap:4px; text-align:center;"
                 ):
                     for lbl, val in [
-                        (fire_mode,  f"{br.final_dps:.1f} DPS"),
+                        (fire_mode,  f"{br.sustained_dps:.1f} DPS"),
                         ("Dmg/Mag",  f"{br.damage_per_magazine:.0f}"),
                         ("Mag",      f"{br.magazine_size}"),
                     ]:
@@ -2133,9 +2156,10 @@ def _build_eval_tab() -> None:
                     f"{bs.headshot_bonus:.0%}" if bs.headshot_bonus else "0%")
 
                 ui.separator().style("margin:4px 0;")
-                _stat_row(stats_weapon, "Raw DPS",   f"{br.raw_dps:.1f}")
-                _stat_row(stats_weapon, "Final DPS", f"{br.final_dps:.1f}",
+                _stat_row(stats_weapon, "Burst DPS",     f"{br.final_dps:.1f}",
                     delta(br.final_dps, bbr.final_dps if bbr else 0))
+                _stat_row(stats_weapon, "Sustained DPS", f"{br.sustained_dps:.1f}",
+                    delta(br.sustained_dps, bbr.sustained_dps if bbr else 0))
                 _stat_row(stats_weapon, "Dmg / Mag", f"{br.damage_per_magazine:.0f}")
                 _stat_row(stats_weapon, "Mag Time",
                     f"{br.magdump_time:.2f}s" if br.magdump_time > 0 else "-")
@@ -2177,14 +2201,16 @@ def _build_eval_tab() -> None:
 
         # ── Spirit tab ───────────────────────────────────────────
         with stats_spirit:
+            boons_val = int(bld_boons.value or 0)
+            total_spirit = int(bs.spirit_power + hero.spirit_gain * boons_val)
             spirit_dps = DamageCalculator.hero_total_spirit_dps(
                 hero,
-                current_spirit=int(bs.spirit_power),
+                current_spirit=total_spirit,
                 cooldown_reduction=bs.cooldown_reduction,
                 spirit_amp=bs.spirit_amp_pct,
                 resist_shred=bs.spirit_resist_shred,
             )
-            bullet_dps   = result.bullet_result.final_dps if result.bullet_result else 0.0
+            bullet_dps   = result.bullet_result.sustained_dps if result.bullet_result else 0.0
             combined_dps = bullet_dps + spirit_dps
 
             with ui.element("div").style(
@@ -2300,8 +2326,8 @@ def _build_optimizer_tab() -> None:
                 br = result.bullet_result
                 ui.label("DPS Output").classes("text-green-400 font-bold mt-4")
                 dps_rows = [
-                    {"metric": "Raw DPS", "value": _fv(br.raw_dps)},
-                    {"metric": "Final DPS", "value": _fv(br.final_dps)},
+                    {"metric": "Burst DPS", "value": _fv(br.final_dps)},
+                    {"metric": "Sustained DPS", "value": _fv(br.sustained_dps)},
                     {"metric": "Damage / Bullet", "value": _fv(br.damage_per_bullet)},
                     {"metric": "Bullets / Sec", "value": _fv(br.bullets_per_second)},
                     {"metric": "Magazine Size", "value": _fv(br.magazine_size, "d")},

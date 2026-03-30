@@ -179,11 +179,13 @@ class BulletResult:
 
     damage_per_bullet: float  # single bullet raw damage
     bullets_per_second: float
-    raw_dps: float  # before resist
-    final_dps: float  # after resist/shred
+    raw_dps: float  # before resist (burst, no reload)
+    final_dps: float  # after resist/shred (burst, no reload)
+    sustained_dps: float  # after resist, including reload downtime
     magazine_size: int
     damage_per_magazine: float
     magdump_time: float  # seconds to empty mag
+    reload_time: float  # seconds to reload
     total_shred: float
     final_resist: float
 
