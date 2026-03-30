@@ -158,6 +158,7 @@ class AbilityConfig:
 
     # Item effects
     escalating_exposure_stacks: int = 0
+    ee_per_stack: float = 0.06  # per-stack spirit amp from EE (default 6%)
     crippling: float = 0.0
     soulshredder: float = 0.0
 

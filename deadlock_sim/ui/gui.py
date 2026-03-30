@@ -2140,6 +2140,7 @@ def _build_eval_tab() -> None:
                 current_spirit=int(bs.spirit_power),
                 cooldown_reduction=bs.cooldown_reduction,
                 spirit_amp=bs.spirit_amp_pct,
+                resist_shred=bs.spirit_resist_shred,
             )
             bullet_dps   = result.bullet_result.final_dps if result.bullet_result else 0.0
             combined_dps = bullet_dps + spirit_dps
@@ -2910,34 +2911,68 @@ def _build_simulation_tab() -> None:
             ui.separator()
             ui.label("DPS Over Time").classes("text-sm font-bold text-sky-400")
 
-            # Bucket damage into 0.5s windows for the chart
+            # Bucket damage by source into 0.5s windows, tracking damage type
             bucket_size = 0.5
             max_t = result.total_duration
             n_buckets = max(1, int(max_t / bucket_size) + 1)
-            buckets = [0.0] * n_buckets
+            time_labels = [round(i * bucket_size, 1) for i in range(n_buckets)]
+
+            # Collect per-source buckets and map source -> damage_type
+            source_buckets: dict[str, list[float]] = {}
+            source_dtype: dict[str, str] = {}
             for entry in result.timeline:
                 idx = min(int(entry.time / bucket_size), n_buckets - 1)
-                buckets[idx] += entry.damage
+                if entry.source not in source_buckets:
+                    source_buckets[entry.source] = [0.0] * n_buckets
+                    source_dtype[entry.source] = entry.damage_type
+                source_buckets[entry.source][idx] += entry.damage
 
-            dps_data = [[round(i * bucket_size, 1), round(b / bucket_size, 1)] for i, b in enumerate(buckets)]
+            # Color by damage type
+            _dtype_colors = {
+                "bullet": "#f59e0b",   # amber/orange
+                "spirit": "#a855f7",   # purple
+                "melee": "#22c55e",    # green
+            }
+
+            # Build one stacked bar series per source, sorted by damage type
+            chart_series = []
+            for source in sorted(source_buckets, key=lambda s: (source_dtype.get(s, ""), s)):
+                dtype = source_dtype.get(source, "spirit")
+                color = _dtype_colors.get(dtype, "#4080ff")
+                dps_vals = [round(v / bucket_size, 1) for v in source_buckets[source]]
+                chart_series.append({
+                    "name": source,
+                    "type": "bar",
+                    "stack": "dps",
+                    "data": dps_vals,
+                    "itemStyle": {"color": color},
+                    "emphasis": {"focus": "series"},
+                })
 
             ui.echart({
-                "tooltip": {"trigger": "axis"},
+                "tooltip": {
+                    "trigger": "axis",
+                    "axisPointer": {"type": "shadow"},
+                },
+                "legend": {
+                    "data": [s["name"] for s in chart_series],
+                    "textStyle": {"color": "#ccc"},
+                    "type": "scroll",
+                    "bottom": 0,
+                },
+                "grid": {"bottom": 60},
                 "xAxis": {
-                    "type": "value", "name": "Time (s)",
+                    "type": "category", "name": "Time (s)",
+                    "data": time_labels,
                     "nameTextStyle": {"color": "#ccc"}, "axisLabel": {"color": "#ccc"},
                 },
                 "yAxis": {
                     "type": "value", "name": "DPS",
                     "nameTextStyle": {"color": "#ccc"}, "axisLabel": {"color": "#ccc"},
                 },
-                "series": [{
-                    "type": "bar", "data": dps_data,
-                    "itemStyle": {"color": "#4080ff"},
-                    "barWidth": "90%",
-                }],
+                "series": chart_series,
                 "backgroundColor": "transparent",
-            }).classes("w-full h-56")
+            }).classes("w-full h-72")
 
     sim_run_btn.on("click", lambda: (_refresh_atk_summary(), _refresh_settings_summary(), _run_sim()))
     _render_def_grid()

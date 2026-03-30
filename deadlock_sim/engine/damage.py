@@ -121,27 +121,27 @@ class DamageCalculator:
     def calculate_spirit(ability: AbilityConfig) -> SpiritResult:
         """Spirit/ability damage calculation.
 
-        Follows the spreadsheet's spirit damage logic:
+        Follows the game's spirit damage logic (consistent with simulation engine):
         1. spirit_contribution = spirit_multiplier * current_spirit
         2. raw_damage = base_damage + spirit_contribution
-        3. Apply resist shred, mystic vuln, spirit amp
-        4. modified_damage = raw_damage * damage_multiplier * (1 - effective_resist)
+        3. Spirit amp (including EE stacks) applies to ALL of raw_damage
+        4. Damage amp (crippling/soulshredder) is a separate multiplier
+        5. modified_damage = raw * (1 + spirit_amp) * (1 + damage_amp) * (1 - resist)
         """
         # Spirit scaling
         spirit_contribution = ability.spirit_multiplier * ability.current_spirit
         raw_damage = ability.base_damage + spirit_contribution
 
-        # Spirit amplification (additive modifiers that scale spirit portion)
-        amp_modifier = 1.0 + ability.spirit_amp
+        # Spirit amplification: attacker spirit_amp + EE stacks on target
+        # EE stacks use the per-stack value from the ability config (not hardcoded)
+        ee_amp = ability.escalating_exposure_stacks * ability.ee_per_stack
+        total_spirit_amp = 1.0 + ability.spirit_amp + ee_amp
 
-        # Item-based damage modifiers
-        ee_bonus = ability.escalating_exposure_stacks * 0.06  # 6% per EE stack
-        item_modifier = 1.0 + ee_bonus + ability.crippling + ability.soulshredder
+        # Damage amp: crippling / soulshredder (separate multiplier)
+        damage_amp = 1.0 + ability.crippling + ability.soulshredder
 
-        # Apply amplification to the spirit contribution specifically,
-        # then combine with base
-        amplified_damage = ability.base_damage + (spirit_contribution * amp_modifier)
-        modified_raw = amplified_damage * item_modifier
+        # Apply spirit amp and damage amp as separate multipliers
+        modified_raw = raw_damage * total_spirit_amp * damage_amp
 
         # Resist
         effective_shred = min(1.0, ability.resist_shred + ability.mystic_vuln)
