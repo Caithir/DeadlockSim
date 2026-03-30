@@ -36,6 +36,28 @@ _build_items: list[Item] = []
 _build_hero_name: str = ""
 _build_boons: int = 0
 
+# Global simulation settings (set by Settings tab, read by Simulation + Build tabs)
+_sim_settings: dict = {
+    # Combat
+    "duration": 15.0,
+    "accuracy": 0.65,
+    "headshot_rate": 0.10,
+    "headshot_multiplier": 1.50,
+    "weapon_uptime": 1.0,
+    "ability_uptime": 1.0,
+    "active_item_uptime": 1.0,
+    # Melee
+    "weave_melee": False,
+    "melee_after_reload": True,
+    # Abilities — disabled ability indices (per hero, keyed by hero name)
+    "disabled_abilities": {},  # hero_name -> set of ability indices
+    "ability_priority": {},    # hero_name -> list of ability indices in priority order
+    # Custom item values — items that don't directly give DPS/EHP
+    # but have utility value the user wants to quantify
+    "custom_item_dps": {},  # item_name -> float (DPS-equivalent value)
+    "custom_item_ehp": {},  # item_name -> float (EHP-equivalent value)
+}
+
 # ── Image mapping ─────────────────────────────────────────────────
 
 _ITEM_IMAGE: dict[str, str] = {
@@ -2250,6 +2272,344 @@ def _build_optimizer_tab() -> None:
                 ui.table(columns=dps_columns, rows=dps_rows, row_key="metric").classes("w-96").props("dense flat bordered")
 
 
+# ── Tab: Settings ───────────────────────────────────────────────
+
+# Utility items that have value beyond direct DPS/EHP (slows, debuffs, etc.)
+_UTILITY_ITEMS: list[tuple[str, str]] = [
+    ("Slowing Hex", "Move slow 20% (3.5s)"),
+    ("Slowing Bullets", "Move slow 30% (3.5s)"),
+    ("Weighted Shots", "Move slow 30% (3.5s)"),
+    ("Point Blank", "Move slow 25% (2s)"),
+    ("Phantom Strike", "Move slow 50% (3s)"),
+    ("Hunter's Aura", "Fire rate slow 14% (1s)"),
+    ("Suppressor", "Fire rate slow 28% (5s)"),
+    ("Rusted Barrel", "Fire rate slow 32% (5s)"),
+    ("Juggernaut", "Fire rate slow 36% (1s)"),
+    ("Colossus", "Move slow 30% (7s)"),
+    ("Glass Cannon", "Move slow 30% (3s)"),
+    ("Lifestrike", "Move slow 60% (2.5s)"),
+    ("Arctic Blast", "Move slow 60% (4s)"),
+    ("Lightning Scroll", "Move slow 80% (1s)"),
+    ("Vortex Web", "Move slow 35% (4s)"),
+    ("Majestic Leap", "Move slow 40% (2.5s)"),
+    ("Ethereal Shift", "Invulnerability"),
+    ("Metal Skin", "Damage immunity"),
+    ("Knockdown", "Stun"),
+    ("Silence Wave", "Silence"),
+    ("Curse", "Silence + slow"),
+    ("Enduring Speed", "Move speed"),
+    ("Fleetfoot", "Move speed"),
+    ("Sprint Boots", "Move speed"),
+]
+
+
+def _build_settings_tab() -> None:
+    """Settings tab for configuring simulation parameters.
+
+    All settings are stored in the global _sim_settings dict, which is
+    read by the Simulation tab and Build tab simulation scoring.
+    """
+    with ui.row().classes("w-full gap-8 items-start").style("min-height: 600px;"):
+
+        # ══ Column 1: Combat Settings ════════════════════════════
+        with ui.column().classes("gap-0").style("width:320px;"):
+            ui.element("div").classes("bl-section-header").text = "COMBAT SETTINGS"
+
+            with ui.column().classes("gap-2 mt-2"):
+                set_duration = ui.number(
+                    label="Sim Duration (s)", value=_sim_settings["duration"],
+                    min=1, max=60, step=1,
+                ).classes("w-44")
+                ui.separator().style("margin:4px 0;")
+
+                ui.label("Accuracy Model").style("color:#e8a838; font-size:11px; font-weight:700;")
+                set_accuracy = ui.number(
+                    label="Accuracy %", value=_sim_settings["accuracy"] * 100,
+                    min=0, max=100, step=1,
+                ).classes("w-36")
+                set_headshot = ui.number(
+                    label="Headshot %", value=_sim_settings["headshot_rate"] * 100,
+                    min=0, max=100, step=1,
+                ).classes("w-36")
+                set_hs_mult = ui.number(
+                    label="Headshot Multiplier", value=_sim_settings["headshot_multiplier"],
+                    min=1.0, max=3.0, step=0.05,
+                ).classes("w-36")
+
+                ui.separator().style("margin:4px 0;")
+                ui.label("Uptime").style("color:#68b45c; font-size:11px; font-weight:700;")
+                set_wpn_up = ui.number(
+                    label="Weapon Uptime %", value=_sim_settings["weapon_uptime"] * 100,
+                    min=0, max=100, step=5,
+                ).classes("w-36")
+                set_ability_up = ui.number(
+                    label="Ability Uptime %", value=_sim_settings["ability_uptime"] * 100,
+                    min=0, max=200, step=10,
+                ).classes("w-36")
+                set_active_up = ui.number(
+                    label="Active Item Uptime %", value=_sim_settings["active_item_uptime"] * 100,
+                    min=0, max=200, step=10,
+                ).classes("w-36")
+
+                ui.separator().style("margin:4px 0;")
+                ui.label("Melee").style("color:#c084fc; font-size:11px; font-weight:700;")
+                set_melee_weave = ui.checkbox(
+                    "Weave light melee between reloads",
+                    value=_sim_settings["weave_melee"],
+                )
+                set_heavy_reload = ui.checkbox(
+                    "Heavy melee during reload",
+                    value=_sim_settings["melee_after_reload"],
+                )
+
+        # ══ Column 2: Ability Configuration ══════════════════════
+        with ui.column().classes("gap-0").style("width:320px;"):
+            ui.element("div").classes("bl-section-header").text = "ABILITY CONFIGURATION"
+
+            ui.label(
+                "Configure which abilities are used in simulations and their priority order."
+            ).style("color:#888; font-size:11px; margin:4px 0 8px;")
+
+            ability_hero_select = ui.select(
+                options=_hero_names,
+                value=_build_hero_name or (_hero_names[0] if _hero_names else ""),
+                label="Hero",
+            ).classes("w-52")
+
+            ability_config_area = ui.column().classes("w-full gap-1 mt-2")
+
+            def _refresh_ability_config(_=None):
+                hero = _heroes.get(ability_hero_select.value)
+                ability_config_area.clear()
+                if not hero or not hero.abilities:
+                    return
+                hero_name = hero.name
+                disabled = _sim_settings["disabled_abilities"].get(hero_name, set())
+                priority = _sim_settings["ability_priority"].get(hero_name, [])
+
+                with ability_config_area:
+                    for i, ability in enumerate(hero.abilities):
+                        if not ability.name:
+                            continue
+                        is_enabled = i not in disabled
+                        has_damage = ability.base_damage > 0 and ability.cooldown > 0
+
+                        with ui.card().classes("w-full").style(
+                            "background:#161625; border:1px solid #2a2a4a; padding:6px 10px;"
+                        ):
+                            with ui.row().classes("items-center gap-3 w-full"):
+                                if ability.image_url:
+                                    ui.image(ability.image_url).style(
+                                        "width:32px; height:32px; object-fit:contain; border-radius:4px;"
+                                    )
+
+                                with ui.column().classes("flex-grow gap-0"):
+                                    with ui.row().classes("items-center gap-2"):
+                                        ui.label(ability.name).style(
+                                            "color:#e8c252; font-size:12px; font-weight:600;"
+                                        )
+                                        if ability.ability_type:
+                                            atype = ability.ability_type.replace("_", " ").title()
+                                            badge_color = (
+                                                "purple" if "spirit" in ability.ability_type.lower()
+                                                else "orange" if "weapon" in ability.ability_type.lower()
+                                                else "blue"
+                                            )
+                                            ui.badge(atype).props(f"color={badge_color} dense")
+
+                                    stat_parts = []
+                                    if ability.base_damage:
+                                        stat_parts.append(f"Dmg: {ability.base_damage:.0f}")
+                                    if ability.cooldown:
+                                        stat_parts.append(f"CD: {ability.cooldown:.1f}s")
+                                    if ability.spirit_scaling:
+                                        stat_parts.append(f"Scale: {ability.spirit_scaling:.2f}x")
+                                    if stat_parts:
+                                        ui.label(" | ".join(stat_parts)).style(
+                                            "color:#9b74d4; font-size:10px; font-family:monospace;"
+                                        )
+
+                                    if not has_damage:
+                                        ui.label("(no damage / no cooldown)").style(
+                                            "color:#555; font-size:10px; font-style:italic;"
+                                        )
+
+                                # Enable/disable toggle
+                                def make_toggle(idx: int, hname: str):
+                                    def on_toggle(e):
+                                        if hname not in _sim_settings["disabled_abilities"]:
+                                            _sim_settings["disabled_abilities"][hname] = set()
+                                        if e.value:
+                                            _sim_settings["disabled_abilities"][hname].discard(idx)
+                                        else:
+                                            _sim_settings["disabled_abilities"][hname].add(idx)
+                                    return on_toggle
+
+                                ui.switch(
+                                    "", value=is_enabled,
+                                    on_change=make_toggle(i, hero_name),
+                                ).props("dense").style("margin-left:auto;")
+
+                    # Priority order
+                    ui.separator().style("margin:8px 0 4px;")
+                    ui.label("Ability Cast Order").style(
+                        "color:#888; font-size:10px; font-weight:700; text-transform:uppercase;"
+                    )
+                    ui.label(
+                        "Enter ability indices (1-4) in desired cast priority, comma-separated."
+                    ).style("color:#555; font-size:10px;")
+
+                    current_order = priority or list(range(len([a for a in hero.abilities if a.name])))
+                    order_str = ", ".join(str(x + 1) for x in current_order)
+
+                    def make_order_handler(hname: str):
+                        def on_order(e):
+                            try:
+                                indices = [int(x.strip()) - 1 for x in e.value.split(",") if x.strip()]
+                                _sim_settings["ability_priority"][hname] = indices
+                            except ValueError:
+                                pass
+                        return on_order
+
+                    ui.input(
+                        label="Priority (e.g., 1, 3, 2, 4)", value=order_str,
+                        on_change=make_order_handler(hero_name),
+                    ).classes("w-52")
+
+            ability_hero_select.on_value_change(_refresh_ability_config)
+            _refresh_ability_config()
+
+        # ══ Column 3: Custom Item Values ═════════════════════════
+        with ui.column().classes("gap-0").style("width:380px;"):
+            ui.element("div").classes("bl-section-header").text = "CUSTOM ITEM VALUES"
+
+            ui.label(
+                "Assign DPS-equivalent or EHP-equivalent values to utility items. "
+                "These values are added when scoring items in the Build tab's "
+                "simulation-based sorts."
+            ).style("color:#888; font-size:11px; margin:4px 0 8px; line-height:1.5;")
+
+            for item_name, desc in _UTILITY_ITEMS:
+                item = _items.get(item_name)
+                if not item:
+                    continue
+
+                colors = _CAT_COLORS.get(item.category, _CAT_COLORS["weapon"])
+                cur_dps = _sim_settings["custom_item_dps"].get(item_name, 0.0)
+                cur_ehp = _sim_settings["custom_item_ehp"].get(item_name, 0.0)
+
+                with ui.element("div").style(
+                    f"display:flex; align-items:center; gap:8px; padding:4px 6px;"
+                    f"border-left:3px solid {colors['border']}; margin:2px 0;"
+                    f"background:rgba(255,255,255,0.02); border-radius:0 4px 4px 0;"
+                ):
+                    # Item icon
+                    ui.image(_item_image_url(item)).style(
+                        "width:28px; height:28px; object-fit:contain; flex-shrink:0;"
+                    )
+
+                    # Name + description
+                    with ui.column().classes("gap-0").style("flex:1; min-width:0;"):
+                        ui.label(item_name).style(
+                            f"color:{colors['text']}; font-size:11px; font-weight:600;"
+                            "white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"
+                        )
+                        ui.label(desc).style(
+                            "color:#888; font-size:9px;"
+                        )
+
+                    # DPS value input
+                    def make_dps_handler(iname: str):
+                        def on_change(e):
+                            _sim_settings["custom_item_dps"][iname] = float(e.value or 0)
+                        return on_change
+
+                    ui.number(
+                        label="DPS", value=cur_dps, min=0, max=500, step=1,
+                        on_change=make_dps_handler(item_name),
+                    ).classes("w-16").props("dense")
+
+                    # EHP value input
+                    def make_ehp_handler(iname: str):
+                        def on_change(e):
+                            _sim_settings["custom_item_ehp"][iname] = float(e.value or 0)
+                        return on_change
+
+                    ui.number(
+                        label="EHP", value=cur_ehp, min=0, max=2000, step=10,
+                        on_change=make_ehp_handler(item_name),
+                    ).classes("w-16").props("dense")
+
+    # ── Save settings to global state on any change ──────────────
+    def _save_setting(key: str, divisor: float = 1.0):
+        def handler(e):
+            _sim_settings[key] = (float(e.value or 0)) / divisor
+        return handler
+
+    def _save_bool(key: str):
+        def handler(e):
+            _sim_settings[key] = bool(e.value)
+        return handler
+
+    set_duration.on_value_change(lambda e: _sim_settings.__setitem__("duration", float(e.value or 15)))
+    set_accuracy.on_value_change(_save_setting("accuracy", 100.0))
+    set_headshot.on_value_change(_save_setting("headshot_rate", 100.0))
+    set_hs_mult.on_value_change(lambda e: _sim_settings.__setitem__("headshot_multiplier", float(e.value or 1.5)))
+    set_wpn_up.on_value_change(_save_setting("weapon_uptime", 100.0))
+    set_ability_up.on_value_change(_save_setting("ability_uptime", 100.0))
+    set_active_up.on_value_change(_save_setting("active_item_uptime", 100.0))
+    set_melee_weave.on_value_change(_save_bool("weave_melee"))
+    set_heavy_reload.on_value_change(_save_bool("melee_after_reload"))
+
+
+def _get_sim_settings(atk_boons: int = 0, def_boons: int = 0) -> SimSettings:
+    """Build a SimSettings from the global _sim_settings dict."""
+    return SimSettings(
+        duration=_sim_settings["duration"],
+        accuracy=_sim_settings["accuracy"],
+        headshot_rate=_sim_settings["headshot_rate"],
+        headshot_multiplier=_sim_settings["headshot_multiplier"],
+        weapon_uptime=_sim_settings["weapon_uptime"],
+        ability_uptime=_sim_settings["ability_uptime"],
+        active_item_uptime=_sim_settings["active_item_uptime"],
+        weave_melee=_sim_settings["weave_melee"],
+        melee_after_reload=_sim_settings["melee_after_reload"],
+        attacker_boons=atk_boons,
+        defender_boons=def_boons,
+    )
+
+
+def _get_ability_schedule(hero_name: str, hero: HeroStats) -> list:
+    """Build ability schedule respecting disabled abilities and priority order."""
+    from ..engine.simulation import AbilityUse
+
+    disabled = _sim_settings["disabled_abilities"].get(hero_name, set())
+    priority = _sim_settings["ability_priority"].get(hero_name, [])
+
+    # Determine which abilities to schedule
+    schedulable = []
+    for i, ability in enumerate(hero.abilities):
+        if i in disabled:
+            continue
+        if ability.base_damage > 0 and ability.cooldown > 0:
+            schedulable.append(i)
+
+    # Reorder by priority if specified
+    if priority:
+        ordered = [i for i in priority if i in schedulable]
+        remaining = [i for i in schedulable if i not in ordered]
+        schedulable = ordered + remaining
+
+    schedule = []
+    for rank, idx in enumerate(schedulable):
+        schedule.append(AbilityUse(
+            ability_index=idx,
+            first_use=0.1 * (rank + 1),
+            use_on_cooldown=True,
+        ))
+    return schedule
+
+
 # ── Tab: Simulation ─────────────────────────────────────────────
 
 
@@ -2337,19 +2697,29 @@ def _build_simulation_tab() -> None:
 
             ui.separator().style("margin:8px 0;")
 
-            # ── Settings ─────────────────────────────────────────
-            ui.element("div").classes("bl-section-header").text = "SIMULATION SETTINGS"
-            with ui.row().classes("flex-wrap gap-2"):
-                sim_duration = ui.number(label="Duration (s)", value=15, min=1, max=60, step=1).classes("w-28")
-                sim_accuracy = ui.number(label="Accuracy %", value=65, min=0, max=100).classes("w-24")
-            with ui.row().classes("flex-wrap gap-2"):
-                sim_headshot = ui.number(label="Headshot %", value=10, min=0, max=100).classes("w-24")
-                sim_uptime = ui.number(label="Wpn Uptime %", value=100, min=0, max=100).classes("w-28")
-            with ui.row().classes("flex-wrap gap-2"):
-                sim_ability_up = ui.number(label="Ability Uptime %", value=100, min=0, max=200).classes("w-32")
-                sim_melee_weave = ui.checkbox("Melee weave", value=False)
-            with ui.row().classes("flex-wrap gap-2"):
-                sim_heavy_reload = ui.checkbox("Heavy melee on reload", value=True)
+            # ── Settings reference ───────────────────────────────
+            with ui.element("div").style(
+                "background:#111820; border:1px solid #2a3a4a; border-radius:6px;"
+                "padding:8px 10px;"
+            ):
+                ui.label("Settings from Settings tab").style(
+                    "color:#e8c252; font-size:10px; font-weight:700;"
+                )
+                sim_settings_summary = ui.label("").style(
+                    "color:#888; font-size:10px; line-height:1.5;"
+                )
+
+                def _refresh_settings_summary():
+                    s = _sim_settings
+                    sim_settings_summary.text = (
+                        f"Duration: {s['duration']:.0f}s | "
+                        f"Accuracy: {s['accuracy']:.0%} | "
+                        f"Headshot: {s['headshot_rate']:.0%} | "
+                        f"Wpn Up: {s['weapon_uptime']:.0%}\n"
+                        f"Ability Up: {s['ability_uptime']:.0%} | "
+                        f"Melee weave: {'on' if s['weave_melee'] else 'off'} | "
+                        f"Heavy reload: {'on' if s['melee_after_reload'] else 'off'}"
+                    )
 
             ui.separator().style("margin:8px 0;")
             sim_run_btn = ui.button("Run Simulation", icon="play_arrow").classes(
@@ -2419,22 +2789,19 @@ def _build_simulation_tab() -> None:
         if not def_hero:
             return
 
+        settings = _get_sim_settings(
+            atk_boons=_build_boons,
+            def_boons=int(sim_def_boons.value or 0),
+        )
+        ability_schedule = _get_ability_schedule(atk_hero.name, atk_hero)
+
         config = SimConfig(
             attacker=atk_hero,
             attacker_build=Build(items=list(_build_items)),
             defender=def_hero,
             defender_build=Build(items=list(sim_def_items)),
-            settings=SimSettings(
-                duration=float(sim_duration.value or 15),
-                accuracy=(sim_accuracy.value or 65) / 100.0,
-                headshot_rate=(sim_headshot.value or 10) / 100.0,
-                weapon_uptime=(sim_uptime.value or 100) / 100.0,
-                ability_uptime=(sim_ability_up.value or 100) / 100.0,
-                weave_melee=bool(sim_melee_weave.value),
-                melee_after_reload=bool(sim_heavy_reload.value),
-                attacker_boons=_build_boons,
-                defender_boons=int(sim_def_boons.value or 0),
-            ),
+            settings=settings,
+            ability_schedule=ability_schedule,
         )
 
         result = CombatSimulator.run(config)
@@ -2572,9 +2939,10 @@ def _build_simulation_tab() -> None:
                 "backgroundColor": "transparent",
             }).classes("w-full h-56")
 
-    sim_run_btn.on("click", lambda: (_refresh_atk_summary(), _run_sim()))
+    sim_run_btn.on("click", lambda: (_refresh_atk_summary(), _refresh_settings_summary(), _run_sim()))
     _render_def_grid()
     _refresh_atk_summary()
+    _refresh_settings_summary()
 
 
 # ── Simulation-based item scoring for Build tab ────────────────
@@ -2589,34 +2957,26 @@ def _sim_item_scores(
 ) -> dict[str, dict[str, float]]:
     """Score each candidate item by running a quick simulation.
 
-    Modes:
-    - "gun": Optimize for bullet DPS (no abilities, weapon-focused)
-    - "spirit": Optimize for spirit DPS (abilities on cooldown)
-    - "hybrid": Optimize for combined DPS
-    - "ehp": Optimize for effective HP (defender perspective)
-
-    Returns dict mapping item_name -> {dps_delta, ehp_delta, sim_dps, sim_ehp}.
+    Uses global _sim_settings for combat parameters and custom item values.
+    Modes: "gun" (weapon-only), "spirit" (abilities on CD), "hybrid" (combined).
     """
     dummy = HeroStats(name="Dummy Target", base_hp=2500, base_regen=0)
 
-    # Baseline simulation
-    base_settings = SimSettings(
-        duration=10.0,
-        accuracy=0.65,
-        headshot_rate=0.10,
-        weapon_uptime=1.0,
-        ability_uptime=1.0 if mode in ("spirit", "hybrid") else 0.0,
-        weave_melee=False,
-        melee_after_reload=True,
-        attacker_boons=boons,
-        defender_boons=0,
-    )
+    # Build settings from global config, override ability uptime per mode
+    base_settings = _get_sim_settings(atk_boons=boons, def_boons=0)
+    if mode == "gun":
+        base_settings.ability_uptime = 0.0
+    # Use shorter duration for scoring (performance)
+    base_settings.duration = min(base_settings.duration, 10.0)
+
+    ability_schedule = _get_ability_schedule(hero.name, hero)
 
     base_config = SimConfig(
         attacker=hero,
         attacker_build=Build(items=list(current_items)),
         defender=dummy,
         settings=base_settings,
+        ability_schedule=list(ability_schedule),
     )
     base_result = CombatSimulator.run(base_config)
     base_dps = base_result.overall_dps
@@ -2627,12 +2987,14 @@ def _sim_item_scores(
         hero.base_hp + hero.hp_gain * boons
         + base_build_stats.bonus_hp + base_build_stats.bullet_shield
     )
-    # Add spirit shield and resist contribution to EHP
     if base_build_stats.bullet_resist_pct > 0:
         base_ehp /= (1.0 - min(0.9, base_build_stats.bullet_resist_pct))
     if base_build_stats.spirit_resist_pct > 0:
         spirit_ehp_mult = 1.0 / (1.0 - min(0.9, base_build_stats.spirit_resist_pct))
         base_ehp = base_ehp * (0.5 + 0.5 * spirit_ehp_mult)
+
+    custom_dps_values = _sim_settings.get("custom_item_dps", {})
+    custom_ehp_values = _sim_settings.get("custom_item_ehp", {})
 
     scores: dict[str, dict[str, float]] = {}
 
@@ -2645,6 +3007,7 @@ def _sim_item_scores(
             attacker_build=Build(items=test_items),
             defender=dummy,
             settings=base_settings,
+            ability_schedule=list(ability_schedule),
         )
         test_result = CombatSimulator.run(test_config)
         test_dps = test_result.overall_dps
@@ -2664,6 +3027,10 @@ def _sim_item_scores(
         cost = item.cost or 1
         dps_delta = test_dps - base_dps
         ehp_delta = test_ehp - base_ehp
+
+        # Add custom DPS/EHP values from Settings tab
+        dps_delta += custom_dps_values.get(item.name, 0.0)
+        ehp_delta += custom_ehp_values.get(item.name, 0.0)
 
         scores[item.name] = {
             "sim_dps_delta": dps_delta,
@@ -2745,6 +3112,7 @@ def run_gui() -> None:
             tab_rank = ui.tab("Rankings")
             tab_build = ui.tab("Build")
             tab_sim = ui.tab("Simulation")
+            tab_settings = ui.tab("Settings")
             tab_opt = ui.tab("Optimizer")
             tab_hero = ui.tab("Hero Stats")
 
@@ -2763,6 +3131,8 @@ def run_gui() -> None:
                 _build_refresh_shop = _build_eval_tab()
             with ui.tab_panel(tab_sim):
                 _build_simulation_tab()
+            with ui.tab_panel(tab_settings):
+                _build_settings_tab()
             with ui.tab_panel(tab_opt):
                 _build_optimizer_tab()
             with ui.tab_panel(tab_hero):
