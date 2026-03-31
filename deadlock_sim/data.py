@@ -23,26 +23,58 @@ from .models import (
 # ── Property name mapping from API to our stat fields ──────────────
 
 _UPGRADE_PROP_MAP = {
+    # Weapon damage
+    "BaseAttackDamagePercent": "weapon_damage_pct",
     "BonusWeaponPower": "weapon_damage_pct",
+    # Fire rate
     "BonusFireRate": "fire_rate_pct",
+    # Ammo
     "BonusClipSize": "ammo_flat",
     "BonusClipSizePercent": "ammo_pct",
-    "BonusBulletArmorDamageReduction": "bullet_resist_pct",
-    "BonusTechArmorDamageReduction": "spirit_resist_pct",
+    # Resistances
+    "BulletResist": "bullet_resist_pct",
+    "TechResist": "spirit_resist_pct",
+    # Health
     "BonusHealth": "bonus_hp",
-    "BonusTechPower": "spirit_power",
-    "BonusBulletLifesteal": "bullet_lifesteal",
-    "BonusTechLifesteal": "spirit_lifesteal",
+    # Spirit power
+    "TechPower": "spirit_power",
+    "SpiritPower": "spirit_power",
+    # Lifesteal
+    "BulletLifestealPercent": "bullet_lifesteal",
+    "AbilityLifestealPercentHero": "spirit_lifesteal",
+    # Regen
     "BonusHealthRegen": "hp_regen",
+    # Move / sprint
     "BonusMoveSpeed": "move_speed",
     "BonusSprintSpeed": "sprint_speed",
+    # Shields
     "BonusBulletShieldHealth": "bullet_shield",
     "BonusTechShieldHealth": "spirit_shield",
-    "BonusBulletArmorReduction": "bullet_resist_shred",
-    "BonusTechArmorReduction": "spirit_resist_shred",
-    "AbilityCooldownReduction": "cooldown_reduction",
-    "TechCooldownReduction": "cooldown_reduction",
-    "BonusSpiritAmp": "spirit_amp_pct",
+    "TechShieldMaxHealth": "spirit_shield",
+    # Headshot
+    "HeadShotBonusDamage": "headshot_bonus",
+    # Resist shred (applied to enemies)
+    "BulletArmorReduction": "bullet_resist_shred",
+    "TechArmorDamageReduction": "spirit_resist_shred",
+    # Cooldown reduction
+    "CooldownReduction": "cooldown_reduction",
+    # Spirit amp
+    "SpellAmplificationMultiplier": "spirit_amp_pct",
+}
+
+# Fields stored as decimals (0.08 for 8%) — API gives whole numbers
+_PERCENT_FIELDS = {
+    "weapon_damage_pct",
+    "fire_rate_pct",
+    "ammo_pct",
+    "bullet_resist_pct",
+    "spirit_resist_pct",
+    "bullet_lifesteal",
+    "spirit_lifesteal",
+    "cooldown_reduction",
+    "spirit_amp_pct",
+    "bullet_resist_shred",
+    "spirit_resist_shred",
 }
 
 # Slot type from API -> our category name
@@ -433,6 +465,8 @@ def _parse_upgrade_item(item_data: dict) -> Item | None:
                 fval = float(val)
                 if mapped == "ammo_flat":
                     fval = int(fval)
+                elif mapped in _PERCENT_FIELDS:
+                    fval = abs(fval) / 100.0  # abs() for shred (API uses negatives)
                 stats[mapped] = stats.get(mapped, 0) + fval
             except (ValueError, TypeError):
                 pass

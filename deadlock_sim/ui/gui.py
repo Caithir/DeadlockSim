@@ -236,10 +236,13 @@ _SORT_OPTIONS = {
     "Spirit Resist %": lambda item: -item.spirit_resist_pct,
     "Spirit Power": lambda item: -item.spirit_power,
     "Bullet Lifesteal %": lambda item: -item.bullet_lifesteal,
+    "Spirit Lifesteal %": lambda item: -item.spirit_lifesteal,
     "HP Regen": lambda item: -item.hp_regen,
-    "Bullet Shield": lambda item: -item.bullet_shield,
+    "Shields": lambda item: -(item.bullet_shield + item.spirit_shield),
     "Bullet Shred %": lambda item: -item.bullet_resist_shred,
+    "Spirit Shred %": lambda item: -item.spirit_resist_shred,
     "Cooldown Reduction %": lambda item: -item.cooldown_reduction,
+    "Spirit Amp %": lambda item: -item.spirit_amp_pct,
 }
 
 # Impact sorts — computed per-hero/boon context; mapped to the score dict key
@@ -269,6 +272,39 @@ _CHART_COLORS = [
 
 
 # ── Helpers ───────────────────────────────────────────────────────
+
+
+def _compute_ehp(
+    hero: HeroStats,
+    bs: BuildStats,
+    boons: int = 0,
+) -> float:
+    """Compute effective HP including all shields, resistances, and lifesteal.
+
+    EHP = (raw_hp + shields) / (1 - bullet_resist) blended with spirit resist,
+    plus a sustain bonus from lifesteal.
+    """
+    raw_hp = hero.base_hp + hero.hp_gain * boons + bs.bonus_hp
+    total_shields = bs.bullet_shield + bs.spirit_shield
+    pool = raw_hp + total_shields
+
+    # Effective HP vs bullet damage (reduced by bullet resist)
+    bullet_resist = min(0.9, max(0.0, bs.bullet_resist_pct))
+    ehp_vs_bullet = pool / (1.0 - bullet_resist) if bullet_resist < 1.0 else pool * 10
+
+    # Effective HP vs spirit damage (reduced by spirit resist)
+    spirit_resist = min(0.9, max(0.0, bs.spirit_resist_pct))
+    ehp_vs_spirit = pool / (1.0 - spirit_resist) if spirit_resist < 1.0 else pool * 10
+
+    # Blended EHP (weight bullet slightly more as it's more common)
+    ehp = ehp_vs_bullet * 0.55 + ehp_vs_spirit * 0.45
+
+    # Sustain bonus: lifesteal adds effective survivability
+    # Model as a percentage boost proportional to lifesteal rates
+    sustain_mult = 1.0 + (bs.bullet_lifesteal * 0.5 + bs.spirit_lifesteal * 0.3)
+    ehp *= sustain_mult
+
+    return ehp
 
 
 def _fv(v: float, fmt: str = ".2f", zero_as_na: bool = True) -> str:
@@ -725,7 +761,7 @@ def _render_item_card(
             "sim_ehp_per_soul": ("EHP/1k Souls", "#81c784"),
             "dps_delta": ("Gun DPS", "#4fc3f7"),
             "ehp_delta": ("EHP", "#81c784"),
-            "spirit_delta": ("Spirit Power", "#ce93d8"),
+            "spirit_delta": ("Spirit DPS", "#ce93d8"),
             "dps_per_soul": ("DPS/1k Souls", "#4fc3f7"),
             "ehp_per_soul": ("EHP/1k Souls", "#81c784"),
         }
@@ -1488,11 +1524,12 @@ _SHOP_BONUS_THRESHOLDS: list[tuple[int, int, int, int]] = [
     (1600,   9,  10,  11),
     (2400,  13,  13,  15),
     (3200,  20,  17,  19),
-    (4800,  49,  34,  38),
-    (7200,  60,  39,  48),
-    (9600,  80,  44,  57),
-    (16000, 95,  48,  66),
-    (22400, 115, 52,  75),
+    (4800,  29,  22,  25),
+    (7200,  40,  27,  32),
+    (9600,  60,  32,  44),
+    (16000, 75,  36,  56),
+    (22400, 95,  40,  69),
+    (28800, 115, 44,  81),
 ]
 _SHOP_BONUS_MAX_SOULS = 28800
 
@@ -1859,8 +1896,7 @@ def _build_eval_tab() -> None:
             spirit_amp=cur_stats.spirit_amp_pct,
             resist_shred=cur_stats.spirit_resist_shred,
         )
-        cur_ehp   = (hero.base_hp + hero.hp_gain * boons_val
-                     + cur_stats.bonus_hp + cur_stats.bullet_shield)
+        cur_ehp   = _compute_ehp(hero, cur_stats, boons_val)
         scores: dict = {}
         for item in filtered_items:
             t_stats = BuildEngine.aggregate_stats(Build(items=list(_build_items) + [item]))
@@ -1873,8 +1909,7 @@ def _build_eval_tab() -> None:
                 spirit_amp=t_stats.spirit_amp_pct,
                 resist_shred=t_stats.spirit_resist_shred,
             ) - cur_spirit
-            ehp_d   = (hero.base_hp + hero.hp_gain * boons_val
-                       + t_stats.bonus_hp + t_stats.bullet_shield) - cur_ehp
+            ehp_d   = _compute_ehp(hero, t_stats, boons_val) - cur_ehp
             cost    = item.cost or 1
             scores[item.name] = {
                 "dps_delta":    gun_d,
@@ -2188,8 +2223,9 @@ def _build_eval_tab() -> None:
             _stat_row(stats_vitality, "Base HP",        f"{base_hp:.0f}")
             _stat_row(stats_vitality, "Bonus HP",       f"+{bs.bonus_hp:.0f}" if bs.bonus_hp else "0",
                 delta(total_hp, base_r.effective_hp))
-            _stat_row(stats_vitality, "Bullet Shield",  f"{bs.bullet_shield:.0f}" if bs.bullet_shield else "0")
-            _stat_row(stats_vitality, "Spirit Shield",  f"{bs.spirit_shield:.0f}" if bs.spirit_shield else "0")
+            total_shields = bs.bullet_shield + bs.spirit_shield
+            _stat_row(stats_vitality, "Shields",  f"{total_shields:.0f}" if total_shields else "0",
+                f"B:{bs.bullet_shield:.0f} S:{bs.spirit_shield:.0f}" if total_shields else "")
             _stat_row(stats_vitality, "HP Regen",       f"+{hero.base_regen + bs.hp_regen:.1f}/s",
                 f"+{bs.hp_regen:.1f}" if bs.hp_regen else "")
             _stat_row(stats_vitality, "Bullet Resist",  f"{bs.bullet_resist_pct:.0%}" if bs.bullet_resist_pct else "0%",
@@ -3089,15 +3125,7 @@ def _sim_item_scores(
 
     # EHP baseline (defender perspective)
     base_build_stats = BuildEngine.aggregate_stats(Build(items=list(current_items)))
-    base_ehp = (
-        hero.base_hp + hero.hp_gain * boons
-        + base_build_stats.bonus_hp + base_build_stats.bullet_shield
-    )
-    if base_build_stats.bullet_resist_pct > 0:
-        base_ehp /= (1.0 - min(0.9, base_build_stats.bullet_resist_pct))
-    if base_build_stats.spirit_resist_pct > 0:
-        spirit_ehp_mult = 1.0 / (1.0 - min(0.9, base_build_stats.spirit_resist_pct))
-        base_ehp = base_ehp * (0.5 + 0.5 * spirit_ehp_mult)
+    base_ehp = _compute_ehp(hero, base_build_stats, boons)
 
     custom_dps_values = _sim_settings.get("custom_item_dps", {})
     custom_ehp_values = _sim_settings.get("custom_item_ehp", {})
@@ -3120,15 +3148,7 @@ def _sim_item_scores(
 
         # EHP
         test_stats = BuildEngine.aggregate_stats(Build(items=test_items))
-        test_ehp = (
-            hero.base_hp + hero.hp_gain * boons
-            + test_stats.bonus_hp + test_stats.bullet_shield
-        )
-        if test_stats.bullet_resist_pct > 0:
-            test_ehp /= (1.0 - min(0.9, test_stats.bullet_resist_pct))
-        if test_stats.spirit_resist_pct > 0:
-            spirit_ehp_mult = 1.0 / (1.0 - min(0.9, test_stats.spirit_resist_pct))
-            test_ehp = test_ehp * (0.5 + 0.5 * spirit_ehp_mult)
+        test_ehp = _compute_ehp(hero, test_stats, boons)
 
         cost = item.cost or 1
         dps_delta = test_dps - base_dps

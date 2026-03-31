@@ -6,6 +6,7 @@ and evaluating build effectiveness.
 
 from __future__ import annotations
 
+from ..data import load_shop_tiers
 from ..models import (
     Build,
     BuildResult,
@@ -14,9 +15,34 @@ from ..models import (
     CombatConfig,
     HeroStats,
     Item,
+    ShopTier,
 )
 from .damage import DamageCalculator
 from .ttk import TTKCalculator
+
+# Cache shop tiers at module level (they're game constants)
+_shop_tiers: list[ShopTier] | None = None
+
+
+def _get_shop_tiers() -> list[ShopTier]:
+    global _shop_tiers
+    if _shop_tiers is None:
+        _shop_tiers = load_shop_tiers()
+    return _shop_tiers
+
+
+def _shop_bonus_for_spend(spend: int, tiers: list[ShopTier], attr: str) -> float:
+    """Look up the shop tier bonus for a given spend amount in a category.
+
+    Returns the bonus value (whole number) for the highest tier reached.
+    """
+    bonus = 0
+    for tier in tiers:
+        if spend >= tier.cost:
+            bonus = getattr(tier, attr)
+        else:
+            break
+    return bonus
 
 
 class BuildEngine:
@@ -24,8 +50,12 @@ class BuildEngine:
 
     @staticmethod
     def aggregate_stats(build: Build) -> BuildStats:
-        """Sum all item stats in a build into a single BuildStats."""
+        """Sum all item stats in a build, including shop tier investment bonuses."""
         bs = BuildStats()
+
+        # Per-category spend tracking
+        spend = {"weapon": 0, "vitality": 0, "spirit": 0}
+
         for item in build.items:
             bs.weapon_damage_pct += item.weapon_damage_pct
             bs.fire_rate_pct += item.fire_rate_pct
@@ -45,6 +75,21 @@ class BuildEngine:
             bs.spirit_resist_shred += item.spirit_resist_shred
             bs.cooldown_reduction += item.cooldown_reduction
             bs.spirit_amp_pct += item.spirit_amp_pct
+            # Track spend per category
+            if item.category in spend:
+                spend[item.category] += item.cost
+
+        # Apply shop tier investment bonuses
+        tiers = _get_shop_tiers()
+        weapon_bonus = _shop_bonus_for_spend(spend["weapon"], tiers, "weapon_bonus")
+        vitality_bonus = _shop_bonus_for_spend(spend["vitality"], tiers, "vitality_bonus")
+        spirit_bonus = _shop_bonus_for_spend(spend["spirit"], tiers, "spirit_bonus")
+
+        # Weapon bonus = % base weapon damage, Vitality = bonus HP, Spirit = spirit power
+        bs.weapon_damage_pct += weapon_bonus / 100.0
+        bs.bonus_hp += vitality_bonus
+        bs.spirit_power += spirit_bonus
+
         bs.total_cost = build.total_cost
         return bs
 
@@ -132,12 +177,16 @@ class BuildEngine:
         if defender and enemy_hp > 0:
             ttk_result = TTKCalculator.calculate(hero, defender, config)
 
-        effective_hp = (
-            hero.base_hp
-            + (hero.hp_gain * boons)
-            + build_stats.bonus_hp
-            + build_stats.bullet_shield
-        )
+        raw_hp = hero.base_hp + (hero.hp_gain * boons) + build_stats.bonus_hp
+        total_shields = build_stats.bullet_shield + build_stats.spirit_shield
+        pool = raw_hp + total_shields
+        b_resist = min(0.9, max(0.0, build_stats.bullet_resist_pct))
+        s_resist = min(0.9, max(0.0, build_stats.spirit_resist_pct))
+        ehp_b = pool / (1.0 - b_resist) if b_resist < 1.0 else pool * 10
+        ehp_s = pool / (1.0 - s_resist) if s_resist < 1.0 else pool * 10
+        effective_hp = ehp_b * 0.55 + ehp_s * 0.45
+        sustain = 1.0 + (build_stats.bullet_lifesteal * 0.5 + build_stats.spirit_lifesteal * 0.3)
+        effective_hp *= sustain
 
         return BuildResult(
             hero_name=hero.name,
