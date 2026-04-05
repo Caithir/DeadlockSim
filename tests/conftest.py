@@ -1,8 +1,11 @@
 """Pytest configuration and fixtures for Playwright GUI tests."""
 
 import os
+import shutil
 import subprocess
+import sys
 import time
+from pathlib import Path
 
 import pytest
 import requests
@@ -10,6 +13,7 @@ import requests
 
 SERVER_URL = "http://localhost:8080"
 SERVER_PORT = 8080
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
 def wait_for_server(url: str, timeout: int = 30) -> bool:
@@ -34,8 +38,8 @@ def gui_server():
     env = os.environ.copy()
     env["NICEGUI_SCREEN_TEST_PORT"] = str(SERVER_PORT)
     proc = subprocess.Popen(
-        ["python", "-m", "deadlock_sim.ui.gui"],
-        cwd="/home/user/DeadlockSim",
+        [sys.executable, "-m", "deadlock_sim.ui.gui"],
+        cwd=str(_PROJECT_ROOT),
         env=env,
     )
     if not wait_for_server(SERVER_URL):
@@ -46,13 +50,32 @@ def gui_server():
     proc.wait(timeout=10)
 
 
-CHROMIUM_EXECUTABLE = "/root/.cache/ms-playwright/chromium-1194/chrome-linux/chrome"
+def _find_chromium() -> str | None:
+    """Discover Playwright's bundled Chromium executable."""
+    # Let playwright tell us where browsers live
+    try:
+        from playwright._impl._driver import compute_driver_executable  # type: ignore
+    except ImportError:
+        pass
+    # Common cache locations by platform
+    if sys.platform == "win32":
+        cache = Path(os.environ.get("LOCALAPPDATA", "")) / "ms-playwright"
+    else:
+        cache = Path.home() / ".cache" / "ms-playwright"
+    if cache.exists():
+        for chrome in sorted(cache.rglob("chrome" if sys.platform != "win32" else "chrome.exe"), reverse=True):
+            return str(chrome)
+    return None
 
 
 @pytest.fixture()
 def page(playwright, gui_server):
     """Provide a Playwright page pointed at the running GUI."""
-    browser = playwright.chromium.launch(executable_path=CHROMIUM_EXECUTABLE)
+    chromium_path = _find_chromium()
+    launch_kwargs: dict = {}
+    if chromium_path:
+        launch_kwargs["executable_path"] = chromium_path
+    browser = playwright.chromium.launch(**launch_kwargs)
     context = browser.new_context()
     pg = context.new_page()
     pg.goto(gui_server)

@@ -9,8 +9,7 @@ from dataclasses import dataclass
 
 from ..models import CombatConfig, HeroStats
 from .damage import DamageCalculator
-from .scaling import ScalingCalculator
-from .ttk import TTKCalculator
+from .heroes import HeroMetrics
 
 
 @dataclass
@@ -53,8 +52,8 @@ class ComparisonEngine:
         boon_level: int = 0,
     ) -> HeroComparison:
         """Direct comparison of two heroes at a boon level."""
-        snap_a = ScalingCalculator.snapshot_at_boon(hero_a, boon_level)
-        snap_b = ScalingCalculator.snapshot_at_boon(hero_b, boon_level)
+        snap_a = HeroMetrics.snapshot(hero_a, boon_level)
+        snap_b = HeroMetrics.snapshot(hero_b, boon_level)
 
         return HeroComparison(
             boon_level=boon_level,
@@ -99,7 +98,7 @@ class ComparisonEngine:
         entries: list[tuple[str, float]] = []
 
         for name, hero in heroes.items():
-            snap = ScalingCalculator.snapshot_at_boon(hero, boon_level)
+            snap = HeroMetrics.snapshot(hero, boon_level)
 
             if stat == "dps":
                 value = snap.dps
@@ -112,10 +111,10 @@ class ComparisonEngine:
             elif stat == "fire_rate":
                 value = hero.base_fire_rate
             elif stat == "dps_growth":
-                growth = ScalingCalculator.growth_percentage(hero)
+                growth = HeroMetrics.growth_percentage(hero)
                 value = growth["dps_growth"]
             elif stat == "hp_growth":
-                growth = ScalingCalculator.growth_percentage(hero)
+                growth = HeroMetrics.growth_percentage(hero)
                 value = growth["hp_growth"]
             else:
                 continue
@@ -149,7 +148,7 @@ class ComparisonEngine:
             for def_name in names:
                 if def_name not in heroes:
                     continue
-                result = TTKCalculator.calculate(
+                result = HeroMetrics.ttk(
                     heroes[atk_name], heroes[def_name], config
                 )
                 matrix[atk_name][def_name] = result.ttk_seconds

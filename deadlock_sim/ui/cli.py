@@ -158,14 +158,15 @@ def display_bullet_calc(hero: HeroStats, config: CombatConfig) -> None:
 
     print(f"  Damage/Bullet:   {_val(result.damage_per_bullet)}")
     print(f"  Bullets/Sec:     {_val(result.bullets_per_second)}")
-    print(f"  Raw DPS:         {_val(result.raw_dps)}")
+    print(f"  Burst DPS:       {_val(result.final_dps)}")
+    print(f"  Sustained DPS:   {_val(result.sustained_dps)}")
     print(f"  Shred:           {result.total_shred:.1%}")
     print(f"  Enemy Resist:    {config.enemy_bullet_resist:.1%} -> {result.final_resist:.1%}")
-    print(f"  Final DPS:       {_val(result.final_dps)}")
     print(_divider())
     print(f"  Magazine:        {_val(result.magazine_size, 'd')} rounds")
     print(f"  Damage/Mag:      {_val(result.damage_per_magazine)}")
     print(f"  Magdump Time:    {_val(result.magdump_time)}s")
+    print(f"  Reload Time:     {_val(result.reload_time)}s")
 
     if config.accuracy < 1.0:
         realistic = DamageCalculator.dps_with_accuracy(hero, config)
@@ -426,8 +427,8 @@ def display_build_eval(
         print(f"\n  Bullet Damage (Boon {boons}):")
         print(f"    Damage/Bullet:    {_val(br.damage_per_bullet)}")
         print(f"    Bullets/Sec:      {_val(br.bullets_per_second)}")
-        print(f"    Raw DPS:          {_val(br.raw_dps)}")
-        print(f"    Final DPS:        {_val(br.final_dps)}")
+        print(f"    Burst DPS:        {_val(br.final_dps)}")
+        print(f"    Sustained DPS:    {_val(br.sustained_dps)}")
         print(f"    Magazine:         {_val(br.magazine_size, 'd')} rounds")
         print(f"    Damage/Mag:       {_val(br.damage_per_magazine)}")
 
@@ -480,8 +481,8 @@ def display_build_optimizer(
     if result.bullet_result:
         br = result.bullet_result
         print(f"\n  DPS Results (Boon {boons}):")
-        print(f"    Raw DPS:     {_val(br.raw_dps)}")
-        print(f"    Final DPS:   {_val(br.final_dps)}")
+        print(f"    Burst DPS:     {_val(br.final_dps)}")
+        print(f"    Sustained DPS: {_val(br.sustained_dps)}")
         print(f"    Magazine:    {_val(br.magazine_size, 'd')} rounds")
 
     if result.ttk_result:

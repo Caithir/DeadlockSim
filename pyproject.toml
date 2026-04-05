@@ -20,3 +20,4 @@ include = ["deadlock_sim*"]
 deadlock-sim = "deadlock_sim.ui.cli:run_cli"
 deadlock-sim-gui = "deadlock_sim.ui.gui:run_gui"
 deadlock-sim-mcp = "deadlock_sim.mcp_server:mcp.run"
+deadlock-sim-patch = "deadlock_sim.patchnotes:_cli_main"

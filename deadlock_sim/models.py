@@ -11,6 +11,7 @@ class AbilityUpgrade:
 
     tier: int = 0
     description: str = ""
+    property_upgrades: list[dict] = field(default_factory=list)
 
 
 @dataclass
@@ -26,6 +27,8 @@ class HeroAbility:
     duration: float = 0.0
     base_damage: float = 0.0
     spirit_scaling: float = 0.0  # spirit power coefficient
+    melee_scale: float = 0.0  # fraction of light melee damage used as base (0 = normal ability)
+    is_dps: bool = False  # True when base_damage was derived from a DPS property (pre-multiplied by duration)
 
     # Upgrades (T1, T2, T3 descriptions)
     upgrades: list[AbilityUpgrade] = field(default_factory=list)
@@ -57,6 +60,10 @@ class HeroStats:
     # Alt fire
     alt_fire_type: str = ""
     alt_fire_pellets: int = 1
+
+    # Per-target pellet cap: max pellets that can hit a single target per shot.
+    # Most heroes = pellets (all hit one target). Drifter = 1 (spread across targets).
+    max_pellets_per_target: int = 0  # 0 = use pellets (no cap)
 
     # Melee
     light_melee_damage: float = 0.0
@@ -101,6 +108,11 @@ class HeroStats:
     # Reload duration
     reload_duration: float = 0.0
 
+    # Crit bonus scale (derived from weapon crit_bonus_start)
+    # Default 1.65 = base headshot multiplier. Heroes with reduced crit
+    # have lower values (e.g., Drifter). Graves = 1.0 (cannot crit).
+    crit_bonus_start: float = 1.65
+
     # Cycle time (for DPS calculations)
     cycle_time: float = 0.0
 
@@ -112,6 +124,7 @@ class CombatConfig:
     # Attacker state
     boons: int = 0
     weapon_damage_bonus: float = 0.0  # flat % increase to weapon damage
+    flat_weapon_bonus: float = 0.0  # flat bonus damage added after % multiplier
     fire_rate_bonus: float = 0.0  # flat % increase to fire rate
     ammo_increase: float = 0.0  # multiplier for extra ammo (1 = doubled)
     ammo_flat: int = 0  # flat bonus ammo from items
@@ -126,13 +139,32 @@ class CombatConfig:
     # Accuracy model
     accuracy: float = 1.0  # 0-1, fraction of shots that land
     headshot_rate: float = 0.0  # 0-1, fraction of hits that are headshots
-    headshot_multiplier: float = 1.5  # default headshot bonus
+    headshot_multiplier: float = 1.65  # base weakpoint multiplier (from hero weapon)
 
     # Defender state
     enemy_bullet_resist: float = 0.0  # 0-1
     enemy_spirit_resist: float = 0.0  # 0-1
     enemy_hp: float = 0.0  # override HP (0 = use hero base)
     enemy_bonus_hp: float = 0.0  # from items
+
+    # Engagement range (meters) — used for damage falloff
+    distance: float = 20.0  # 0 = point-blank (no falloff)
+
+    # Target debuffs
+    target_bullet_damage_amp: float = 0.0  # e.g. Bebop Grapple +0.20
+
+    # Golden statue bonuses
+    golden_buffs_count: int = 0  # total buffs acquired; split evenly by default
+    golden_weapon_total: float = 0.0  # override: total weapon % from statues
+    golden_spirit_total: float = 0.0  # override: total spirit flat from statues
+    golden_vitality_total: float = 0.0  # override: total vitality % from statues
+
+    # Conditional item assumptions (for static what-if analysis)
+    berserker_stacks: int = 0  # 0-10, each stack = +7% weapon damage
+    intensifying_mag_pct: float = 0.0  # 0.0-0.45, assumed weapon damage bonus
+    opening_rounds_active: bool = False  # True = target above 50% HP threshold
+    close_range_active: bool = False  # True = within close-range threshold
+    long_range_active: bool = False  # True = beyond long-range threshold
 
 
 @dataclass
@@ -158,6 +190,7 @@ class AbilityConfig:
 
     # Item effects
     escalating_exposure_stacks: int = 0
+    ee_per_stack: float = 0.06  # per-stack spirit amp from EE (default 6%)
     crippling: float = 0.0
     soulshredder: float = 0.0
 
@@ -178,11 +211,13 @@ class BulletResult:
 
     damage_per_bullet: float  # single bullet raw damage
     bullets_per_second: float
-    raw_dps: float  # before resist
-    final_dps: float  # after resist/shred
+    raw_dps: float  # before resist (burst, no reload)
+    final_dps: float  # after resist/shred (burst, no reload)
+    sustained_dps: float  # after resist, including reload downtime
     magazine_size: int
     damage_per_magazine: float
     magdump_time: float  # seconds to empty mag
+    reload_time: float  # seconds to reload
     total_shred: float
     final_resist: float
 
@@ -210,6 +245,43 @@ class TTKResult:
     realistic_dps: float  # DPS after accuracy + headshots
     target_hp: float
     damage_per_magazine: float
+
+
+@dataclass
+class MeleeResult:
+    """Output of a melee damage calculation."""
+
+    light_damage: float  # per-hit light melee damage after bonuses
+    heavy_damage: float  # per-hit heavy melee damage after bonuses
+    light_dps: float  # light melee DPS (damage / cycle time)
+    heavy_dps: float  # heavy melee DPS (damage / cycle time)
+
+
+@dataclass
+class ItemDamageResult:
+    """Output of an individual item's damage calculation."""
+
+    item_name: str
+    damage_per_hit: float  # damage per proc/hit/tick
+    dps: float  # effective DPS accounting for proc rate / cooldown
+    damage_type: str  # "spirit", "bullet", or "melee"
+    scaled_from: str  # what stat it scales from: "spirit", "boons", "weapon"
+    spirit_contribution: float = 0.0  # portion from spirit scaling
+    boon_contribution: float = 0.0  # portion from boon scaling
+
+
+@dataclass
+class AbilityDamageResult:
+    """Output of a hero ability damage calculation with boon context."""
+
+    ability_name: str
+    raw_damage: float  # base + spirit contribution
+    modified_damage: float  # after amp, items, resist
+    spirit_contribution: float
+    dps: float  # damage / cooldown or damage / duration
+    effective_cooldown: float
+    boons: int
+    current_spirit: float
 
 
 @dataclass
@@ -260,10 +332,18 @@ class Item:
     bullet_resist_shred: float = 0.0
     spirit_resist_shred: float = 0.0
     cooldown_reduction: float = 0.0
+    item_cooldown_reduction: float = 0.0
     spirit_amp_pct: float = 0.0
+    spirit_power_pct: float = 0.0  # % multiplier on total spirit power (e.g. Boundless Spirit)
+    melee_damage_pct: float = 0.0
+    heavy_melee_damage_pct: float = 0.0
 
     # Optional condition describing when the stat applies
     condition: str = ""
+
+    # Conditional stats — only active under specific triggers (e.g. on-hit, active use).
+    # Keys match the same stat field names (e.g. "spirit_power", "bullet_resist_shred").
+    conditional_stats: dict[str, float] = field(default_factory=dict)
 
     # All raw properties from the API
     raw_properties: dict = field(default_factory=dict)
@@ -300,6 +380,7 @@ class BuildStats:
     bullet_resist_pct: float = 0.0
     spirit_resist_pct: float = 0.0
     bonus_hp: float = 0.0
+    base_hp_pct: float = 0.0  # Vitality shop tier bonus (% multiplier on base+boon HP)
     spirit_power: float = 0.0
     bullet_lifesteal: float = 0.0
     spirit_lifesteal: float = 0.0
@@ -310,8 +391,15 @@ class BuildStats:
     bullet_resist_shred: float = 0.0
     spirit_resist_shred: float = 0.0
     cooldown_reduction: float = 0.0
+    item_cooldown_reduction: float = 0.0
     spirit_amp_pct: float = 0.0
+    spirit_power_pct: float = 0.0  # % multiplier on total spirit power
+    melee_damage_pct: float = 0.0
+    heavy_melee_damage_pct: float = 0.0
     total_cost: int = 0
+    weapon_cost: int = 0
+    vitality_cost: int = 0
+    spirit_cost: int = 0
 
 
 @dataclass
