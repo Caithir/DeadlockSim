@@ -6,7 +6,11 @@ and evaluating build effectiveness.
 
 from __future__ import annotations
 
+import logging
+
 from ..data import _SHOP_TIER_DATA
+
+log = logging.getLogger(__name__)
 from ..models import (
     Build,
     BuildResult,
@@ -267,6 +271,10 @@ class BuildEngine:
         enabled_conditionals: set[str] | None = None,
     ) -> BuildResult:
         """Evaluate a build for a hero, computing DPS and optional TTK."""
+        log.debug(
+            "evaluate_build: hero=%s items=%d boons=%d",
+            hero.name, len(build.items), boons,
+        )
         build_stats = cls.aggregate_stats(build, enabled_conditionals=enabled_conditionals)
 
         # Defender setup

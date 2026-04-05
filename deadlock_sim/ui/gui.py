@@ -9,10 +9,13 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import math
 import os
 import re
 from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 from nicegui import app, ui
 
@@ -23,51 +26,104 @@ from ..engine.damage import DamageCalculator
 from ..engine.simulation import CombatSimulator, SimConfig, SimResult, SimSettings
 from ..models import Build, HeroStats, Item
 
-# ── Global state ──────────────────────────────────────────────────
+# ── Shared read-only data (loaded once, safe for all clients) ─────
 
 _heroes: dict[str, HeroStats] = {}
 _hero_names: list[str] = []
 _items: dict[str, Item] = {}
 _item_names: list[str] = []
-_build_items: list[Item] = []
-_build_ability_upgrades: dict[str, dict[int, int]] = {}  # {hero_name: {ability_idx: max_tier}}
-_build_ability_priority: dict[str, list[int]] = {}  # {hero_name: [ability_idx order]}
 
-# Shared build context (set by Build tab, read by Simulation tab)
-_build_hero_name: str = ""
-_build_boons: int = 0
 
-# Global simulation settings (set by Settings tab, read by Simulation + Build tabs)
-_sim_settings: dict = {
-    # Combat
-    "duration": 15.0,
-    "accuracy": 0.65,
-    "headshot_rate": 0.10,
-    "headshot_multiplier": 1.50,
-    "weapon_uptime": 1.0,
-    "ability_uptime": 1.0,
-    "active_item_uptime": 1.0,
-    # Melee
-    "weave_melee": False,
-    "melee_after_reload": True,
-    # Bidirectional
-    "bidirectional": False,
-    # Conditional item stats — grouped by category
-    "cond_shred": True,       # On-hit resist shred (bullet/spirit)
-    "cond_weapon": False,     # Weapon damage, fire rate, ammo
-    "cond_spirit": False,     # Spirit power, spirit amp
-    "cond_defense": False,    # Resist, shields, bonus HP
-    "cond_sustain": False,    # Lifesteal, HP regen
-    # Abilities — disabled ability indices (per hero, keyed by hero name)
-    "disabled_abilities": {},  # hero_name -> set of ability indices
-    "ability_priority": {},    # hero_name -> list of ability indices in priority order
-    # Custom item values — items that don't directly give DPS/EHP
-    # but have utility value the user wants to quantify
-    "custom_item_dps": {},  # item_name -> float (DPS-equivalent value)
-    "custom_item_ehp": {},  # item_name -> float (EHP-equivalent value)
-}
+class _PageState:
+    """Per-client mutable state, created fresh for each browser session."""
 
-# Mapping from stat field name → conditional category key in _sim_settings
+    def __init__(self) -> None:
+        self.build_items: list[Item] = []
+        self.build_ability_upgrades: dict[str, dict[int, int]] = {}
+        self.build_hero_name: str = ""
+        self.build_boons: int = 0
+        self.sim_settings: dict = {
+            "duration": 15.0,
+            "accuracy": 0.65,
+            "headshot_rate": 0.10,
+            "headshot_multiplier": 1.50,
+            "weapon_uptime": 1.0,
+            "ability_uptime": 1.0,
+            "active_item_uptime": 1.0,
+            "weave_melee": False,
+            "melee_after_reload": True,
+            "bidirectional": False,
+            "cond_shred": True,
+            "cond_weapon": False,
+            "cond_spirit": False,
+            "cond_defense": False,
+            "cond_sustain": False,
+            "disabled_abilities": {},
+            "ability_priority": {},
+            "custom_item_dps": {},
+            "custom_item_ehp": {},
+        }
+
+    def enabled_conditionals(self) -> set[str]:
+        """Return the set of stat field names whose conditionals are enabled."""
+        enabled: set[str] = set()
+        for stat_name, setting_key in _COND_CATEGORY_MAP.items():
+            if self.sim_settings.get(setting_key, False):
+                enabled.add(stat_name)
+        return enabled
+
+    def get_ability_upgrades_map(self) -> dict[int, list[int]]:
+        """Return ability upgrades for current build hero as {idx: [tiers]}."""
+        upgrades = self.build_ability_upgrades.get(self.build_hero_name, {})
+        return {idx: list(range(1, max_tier + 1)) for idx, max_tier in upgrades.items()}
+
+    def get_sim_settings(self, atk_boons: int = 0, def_boons: int = 0) -> SimSettings:
+        """Build a SimSettings from per-client settings."""
+        s = self.sim_settings
+        return SimSettings(
+            duration=s["duration"],
+            accuracy=s["accuracy"],
+            headshot_rate=s["headshot_rate"],
+            headshot_multiplier=s["headshot_multiplier"],
+            weapon_uptime=s["weapon_uptime"],
+            ability_uptime=s["ability_uptime"],
+            active_item_uptime=s["active_item_uptime"],
+            weave_melee=s["weave_melee"],
+            melee_after_reload=s["melee_after_reload"],
+            attacker_boons=atk_boons,
+            defender_boons=def_boons,
+            bidirectional=s["bidirectional"],
+        )
+
+    def get_ability_schedule(self, hero_name: str, hero: "HeroStats") -> list:
+        """Build ability schedule respecting disabled abilities and priority."""
+        from ..engine.simulation import AbilityUse
+
+        disabled = self.sim_settings["disabled_abilities"].get(hero_name, set())
+        priority = self.sim_settings["ability_priority"].get(hero_name, [])
+
+        schedulable = []
+        for i, ability in enumerate(hero.abilities):
+            if i in disabled:
+                continue
+            if ability.base_damage > 0 and ability.cooldown > 0:
+                schedulable.append(i)
+
+        if priority:
+            ordered = [i for i in priority if i in schedulable]
+            remaining = [i for i in schedulable if i not in ordered]
+            schedulable = ordered + remaining
+
+        schedule = []
+        for rank, idx in enumerate(schedulable):
+            schedule.append(AbilityUse(
+                ability_index=idx,
+                first_use=0.1 * (rank + 1),
+                use_on_cooldown=True,
+            ))
+        return schedule
+
+# Mapping from stat field name → conditional category key in state.sim_settings
 _COND_CATEGORY_MAP: dict[str, str] = {
     "bullet_resist_shred": "cond_shred",
     "spirit_resist_shred": "cond_shred",
@@ -90,14 +146,6 @@ _COND_CATEGORY_MAP: dict[str, str] = {
     "cooldown_reduction": "cond_spirit",
 }
 
-
-def _enabled_conditionals() -> set[str]:
-    """Return the set of stat field names whose conditionals are enabled."""
-    enabled: set[str] = set()
-    for stat_name, setting_key in _COND_CATEGORY_MAP.items():
-        if _sim_settings.get(setting_key, False):
-            enabled.add(stat_name)
-    return enabled
 
 
 # ── Image mapping ─────────────────────────────────────────────────
@@ -710,9 +758,10 @@ _CUSTOM_CSS = """
     cursor: pointer; border-radius: 3px;
 }
 .stat-row-click:hover { background: rgba(255,255,255,0.06); }
-.stat-row-label { color: #888; flex: 1; }
-.stat-row-val   { color: #e8e8e8; font-variant-numeric: tabular-nums; min-width: 52px; text-align: right; }
-.stat-row-bonus { color: #7aff7a; font-size: 11px; min-width: 44px; text-align: right; }
+.stat-row-label { color: #888; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stat-row-val   { color: #e8e8e8; font-variant-numeric: tabular-nums; min-width: 40px; text-align: right; white-space: nowrap; }
+.stat-row-bonus { color: #7aff7a; font-size: 11px; min-width: 32px; text-align: right; white-space: nowrap; }
+.stat-row-perk  { color: #555; font-size: 10px; min-width: 32px; text-align: right; white-space: nowrap; }
 
 /* ── Legacy chip (optimizer tab) ─────────────────────────────── */
 .build-item-chip {
@@ -891,11 +940,12 @@ def _render_item_card(
     score: float | None = None,
     score_suffix: str = "",
     score_detail: dict | None = None,
-) -> None:
+) -> ui.element:
     """Render a shop item as a card: icon + name + optional score badge + tooltip.
 
     score_detail: optional dict of score metrics to append to the tooltip
                   (e.g. {"sim_dps_delta": 12.3, "sim_ehp_delta": 5.0}).
+    Returns the card root element so callers can track / remove it.
     """
     colors = _CAT_COLORS.get(item.category, _CAT_COLORS["weapon"])
     tooltip_inner = _build_tooltip_html(item)
@@ -910,15 +960,15 @@ def _render_item_card(
             'IMPACT</div>'
         )
         _score_labels = {
-            "sim_dps_delta": ("DPS", "#4fc3f7"),
-            "sim_ehp_delta": ("EHP", "#81c784"),
-            "sim_dps_per_soul": ("DPS/1k Souls", "#4fc3f7"),
-            "sim_ehp_per_soul": ("EHP/1k Souls", "#81c784"),
-            "dps_delta": ("Gun DPS", "#4fc3f7"),
-            "ehp_delta": ("EHP", "#81c784"),
-            "spirit_delta": ("Spirit DPS", "#ce93d8"),
-            "dps_per_soul": ("DPS/1k Souls", "#4fc3f7"),
-            "ehp_per_soul": ("EHP/1k Souls", "#81c784"),
+            "sim_dps_delta": ("DPS", "#e8a838"),
+            "sim_ehp_delta": ("EHP", "#90a8f0"),
+            "sim_dps_per_soul": ("DPS/1k Souls", "#e8a838"),
+            "sim_ehp_per_soul": ("EHP/1k Souls", "#90a8f0"),
+            "dps_delta": ("Gun DPS", "#e8a838"),
+            "ehp_delta": ("EHP", "#90a8f0"),
+            "spirit_delta": ("Spirit DPS", "#c090f0"),
+            "dps_per_soul": ("DPS/1k Souls", "#e8a838"),
+            "ehp_per_soul": ("EHP/1k Souls", "#90a8f0"),
         }
         for key, val in score_detail.items():
             if abs(val) < 0.01:
@@ -937,9 +987,10 @@ def _render_item_card(
 
     _TIER_ROMAN = {1: "I", 2: "II", 3: "III", 4: "IV", 5: "V"}
 
-    with ui.element("div").classes("item-card").style(
+    card = ui.element("div").classes("item-card").style(
         f"border-color:{colors['border']}; background:{colors['bg']};"
-    ).on("click", lambda _, it=item: on_click_fn(it)):
+    ).on("click", lambda _, it=item: on_click_fn(it))
+    with card:
         ui.image(_item_image_url(item)).style("width: 54px; height: 54px; object-fit: contain;")
         # Tier indicator
         tier_label = _TIER_ROMAN.get(item.tier, "")
@@ -961,6 +1012,7 @@ def _render_item_card(
             "max-width:380px; white-space:normal; word-wrap:break-word;"
         ):
             ui.html(tooltip_inner)
+    return card
 
 # ── Tab: Hero Stats ──────────────────────────────────────────────
 
@@ -1286,9 +1338,10 @@ def _render_ability_prog_html(hero: "HeroStats | None") -> str:
     return f'<div class="bl-prog-grid">{rows_html}</div>'
 
 
-def _build_eval_tab() -> None:
+def _build_eval_tab(state: _PageState) -> None:
     all_sort_options = list(_SORT_OPTIONS.keys()) + list(_IMPACT_SORT_KEYS.keys()) + list(_SIM_SORT_KEYS.keys())
     cat_state = {"value": "all"}
+    _card_refs: dict[str, ui.element] = {}  # item-name → card element for targeted removal
 
     # ── Main two-column layout ────────────────────────────────────
     with ui.row().classes("w-full gap-0 items-start").style("min-height: 660px;"):
@@ -1439,7 +1492,7 @@ def _build_eval_tab() -> None:
     def _current_boons():
         """Auto-calculate boon count from total souls (items + extra)."""
         from ..data import souls_to_boons
-        total = sum(i.cost for i in _build_items) + int(bld_extra_souls.value or 0)
+        total = sum(i.cost for i in state.build_items) + int(bld_extra_souls.value or 0)
         return souls_to_boons(total)
 
     def _current_ability_upgrades_map():
@@ -1447,7 +1500,7 @@ def _build_eval_tab() -> None:
         hero = _heroes.get(bld_hero.value)
         if not hero:
             return {}
-        upgrades = _build_ability_upgrades.get(hero.name, {})
+        upgrades = state.build_ability_upgrades.get(hero.name, {})
         return {idx: list(range(1, max_tier + 1)) for idx, max_tier in upgrades.items()}
 
     def _compute_impact_scores(filtered_items: list) -> dict:
@@ -1456,8 +1509,8 @@ def _build_eval_tab() -> None:
             return {}
         boons_val = _current_boons()
         ab_upgrades = _current_ability_upgrades_map()
-        cur_build = Build(items=list(_build_items))
-        ec = _enabled_conditionals()
+        cur_build = Build(items=list(state.build_items))
+        ec = state.enabled_conditionals()
         cur_stats = BuildEngine.aggregate_stats(cur_build, enabled_conditionals=ec)
         cur_cfg   = BuildEngine.build_to_attacker_config(cur_stats, boons=boons_val, spirit_gain=hero.spirit_gain)
         cur_gun   = DamageCalculator.calculate_bullet(hero, cur_cfg).sustained_dps
@@ -1474,9 +1527,9 @@ def _build_eval_tab() -> None:
         for item in filtered_items:
             # Recalculate boons with the trial item added
             from ..data import souls_to_boons as _s2b
-            trial_total = sum(i.cost for i in _build_items) + item.cost + int(bld_extra_souls.value or 0)
+            trial_total = sum(i.cost for i in state.build_items) + item.cost + int(bld_extra_souls.value or 0)
             trial_boons = _s2b(trial_total)
-            t_stats = BuildEngine.aggregate_stats(Build(items=list(_build_items) + [item]), enabled_conditionals=ec)
+            t_stats = BuildEngine.aggregate_stats(Build(items=list(state.build_items) + [item]), enabled_conditionals=ec)
             t_cfg   = BuildEngine.build_to_attacker_config(t_stats, boons=trial_boons, spirit_gain=hero.spirit_gain)
             gun_d   = DamageCalculator.calculate_bullet(hero, t_cfg).sustained_dps - cur_gun
             spirit_d = DamageCalculator.hero_total_spirit_dps(
@@ -1507,7 +1560,7 @@ def _build_eval_tab() -> None:
         is_sim    = sort_name in _SIM_SORT_KEYS
 
         # Collect names of already-purchased items
-        owned_names = {i.name for i in _build_items}
+        owned_names = {i.name for i in state.build_items}
 
         filtered: list = []
         for item in _items.values():
@@ -1537,7 +1590,7 @@ def _build_eval_tab() -> None:
             if hero:
                 score_key, sim_mode = _SIM_SORT_KEYS[sort_name]
                 boons_val = _current_boons()
-                scores = _sim_item_scores(hero, list(_build_items), filtered, boons_val, sim_mode)
+                scores = _sim_item_scores(state, hero, list(state.build_items), filtered, boons_val, sim_mode)
                 active_score_key = score_key
                 filtered.sort(key=lambda i: -scores.get(i.name, {}).get(score_key, 0))
                 if "Soul" in sort_name:
@@ -1561,6 +1614,7 @@ def _build_eval_tab() -> None:
             ]
 
         shop_container.clear()
+        _card_refs.clear()
         use_tier_groups = (sort_name == "Cost" and not search)
 
         with shop_container:
@@ -1611,7 +1665,7 @@ def _build_eval_tab() -> None:
                                         ) if (is_scored and sc) else None
                                         # Use sim scores when available, otherwise impact scores
                                         detail = sc if is_sim else impact_scores.get(item.name)
-                                        _render_item_card(item, add_item, score=sv, score_suffix=score_suffix,
+                                        _card_refs[item.name] = _render_item_card(item, add_item, score=sv, score_suffix=score_suffix,
                                                          score_detail=detail)
                 else:
                     with ui.element("div").classes("shop-card-grid"):
@@ -1622,35 +1676,39 @@ def _build_eval_tab() -> None:
                                 sort_name, score_suffix
                             ) if (is_scored and sc) else None
                             detail = sc if is_sim else impact_scores.get(item.name)
-                            _render_item_card(item, add_item, score=sv, score_suffix=score_suffix,
+                            _card_refs[item.name] = _render_item_card(item, add_item, score=sv, score_suffix=score_suffix,
                                              score_detail=detail)
 
     def _is_dynamic_sort():
         return sort_select.value in _IMPACT_SORT_KEYS or sort_select.value in _SIM_SORT_KEYS
 
     def add_item(item: Item):
-        global _build_boons
-        if any(i.name == item.name for i in _build_items):
+        if any(i.name == item.name for i in state.build_items):
             return
-        _build_items.append(item)
-        _build_boons = _current_boons()
+        state.build_items.append(item)
+        state.build_boons = _current_boons()
         refresh_build_display()
         update_results()
-        refresh_shop()
+        # When using dynamic scoring, item scores all change — full refresh needed.
+        # Otherwise just remove the purchased card to avoid icon flash.
+        if _is_dynamic_sort():
+            refresh_shop()
+        elif item.name in _card_refs:
+            _card_refs.pop(item.name).delete()
+        else:
+            refresh_shop()
 
     def remove_item(idx: int):
-        global _build_boons
-        if 0 <= idx < len(_build_items):
-            _build_items.pop(idx)
-            _build_boons = _current_boons()
+        if 0 <= idx < len(state.build_items):
+            state.build_items.pop(idx)
+            state.build_boons = _current_boons()
             refresh_build_display()
             update_results()
             refresh_shop()
 
     def clear_build():
-        global _build_boons
-        _build_items.clear()
-        _build_boons = _current_boons()
+        state.build_items.clear()
+        state.build_boons = _current_boons()
         refresh_build_display()
         update_results()
         refresh_shop()
@@ -1658,16 +1716,16 @@ def _build_eval_tab() -> None:
     async def save_current_build():
         """Save the current build to browser localStorage via a name dialog."""
         hero = _heroes.get(bld_hero.value)
-        if not hero or not _build_items:
+        if not hero or not state.build_items:
             ui.notify("Add a hero and items before saving.", type="warning")
             return
 
         # Compute stats for the save snapshot
-        build = Build(items=list(_build_items))
+        build = Build(items=list(state.build_items))
         boons = _current_boons()
         ab_upgrades = _current_ability_upgrades_map()
         acc = (bld_acc.value or 0) / 100.0
-        ec = _enabled_conditionals()
+        ec = state.enabled_conditionals()
         result = BuildEngine.evaluate_build(hero, build, boons=boons, accuracy=acc, headshot_rate=0.15, enabled_conditionals=ec)
         bs = result.build_stats
         br = result.bullet_result
@@ -1707,11 +1765,11 @@ def _build_eval_tab() -> None:
                         "hero_name": hero.name,
                         "build_name": build_name,
                         "build_type": build_type,
-                        "items": [i.name for i in _build_items],
+                        "items": [i.name for i in state.build_items],
                         "extra_souls": int(bld_extra_souls.value or 0),
                         "ability_upgrades": {
                             h: {str(k): v for k, v in m.items()}
-                            for h, m in _build_ability_upgrades.items()
+                            for h, m in state.build_ability_upgrades.items()
                         },
                         "gun_dps": round(gun_dps, 1),
                         "spirit_dps": round(spirit_dps, 1),
@@ -1747,7 +1805,7 @@ def _build_eval_tab() -> None:
     def refresh_build_display():
         from ..data import souls_to_boons, souls_to_ability_points, ABILITY_TIER_COSTS
 
-        total  = sum(i.cost for i in _build_items)
+        total  = sum(i.cost for i in state.build_items)
         extra  = int(bld_extra_souls.value or 0)
         total_souls = total + extra
 
@@ -1760,7 +1818,7 @@ def _build_eval_tab() -> None:
         hero = _heroes.get(bld_hero.value)
         hero_name = hero.name if hero else ""
         ap_spent = 0
-        upgrades_map = _build_ability_upgrades.get(hero_name, {})
+        upgrades_map = state.build_ability_upgrades.get(hero_name, {})
         for _idx, max_tier in upgrades_map.items():
             for t in range(max_tier):
                 if t < len(ABILITY_TIER_COSTS):
@@ -1797,8 +1855,8 @@ def _build_eval_tab() -> None:
                 num_abilities = len(abilities)
 
                 # Pre-compute current stats for delta comparison
-                build = Build(items=list(_build_items))
-                cur_stats = BuildEngine.aggregate_stats(build, enabled_conditionals=_enabled_conditionals())
+                build = Build(items=list(state.build_items))
+                cur_stats = BuildEngine.aggregate_stats(build, enabled_conditionals=state.enabled_conditionals())
                 cur_boons = boons_val
                 cur_ab_map = {idx: list(range(1, mt + 1)) for idx, mt in upgrades_map.items()}
                 boon_sp = hero.spirit_gain * cur_boons
@@ -1863,11 +1921,11 @@ def _build_eval_tab() -> None:
                             def make_toggle(aidx=ab_idx, tn=tier_num, act=is_active, hname=hero_name):
                                 def handler(_):
                                     if act:
-                                        _build_ability_upgrades.setdefault(hname, {})[aidx] = tn - 1
+                                        state.build_ability_upgrades.setdefault(hname, {})[aidx] = tn - 1
                                         if tn - 1 <= 0:
-                                            _build_ability_upgrades.get(hname, {}).pop(aidx, None)
+                                            state.build_ability_upgrades.get(hname, {}).pop(aidx, None)
                                     else:
-                                        _build_ability_upgrades.setdefault(hname, {})[aidx] = tn
+                                        state.build_ability_upgrades.setdefault(hname, {})[aidx] = tn
                                     refresh_build_display()
                                     update_results()
                                 return handler
@@ -1923,7 +1981,7 @@ def _build_eval_tab() -> None:
         build_grid.clear()
         with build_grid:
             # Compute grid dimensions: 6 columns, fill top-down then left-to-right
-            filled      = len(_build_items)
+            filled      = len(state.build_items)
             min_slots   = max(12, filled + (6 - filled % 6) % 6)
             total_slots = ((min_slots + 5) // 6) * 6
             num_rows    = total_slots // 6
@@ -1934,7 +1992,7 @@ def _build_eval_tab() -> None:
                 f"grid-auto-flow: column;"
             )
 
-            for i, item in enumerate(_build_items):
+            for i, item in enumerate(state.build_items):
                 colors = _CAT_COLORS.get(item.category, _CAT_COLORS["weapon"])
                 with ui.element("div").classes("bl-slot-filled").style(
                     f"border-color:{colors['border']}; background:{colors['bg']};"
@@ -2007,11 +2065,12 @@ def _build_eval_tab() -> None:
 
     def _stat_row(container, label: str, base_val: str, bonus_val: str = "",
                   breakdown: list[tuple[str, float]] | None = None,
-                  fmt: str = "f"):
+                  fmt: str = "f", per_k: float | None = None):
         """Render a stat row. If *breakdown* is provided the row is clickable
         and opens a dialog showing each source.
 
         *fmt*: ``"f"`` for plain float, ``"pct"`` for percentage formatting.
+        *per_k*: value-per-1000-souls to display inline (muted).
         """
         with container:
             cls = "stat-row-click" if breakdown else "stat-row"
@@ -2021,6 +2080,11 @@ def _build_eval_tab() -> None:
                 ui.label(base_val).classes("stat-row-val")
                 if bonus_val:
                     ui.label(bonus_val).classes("stat-row-bonus")
+                if per_k is not None:
+                    if fmt == "pct" and abs(per_k) >= 0.0005:
+                        ui.label(f"{per_k:.1%}/k").classes("stat-row-perk")
+                    elif fmt != "pct" and abs(per_k) >= 0.05:
+                        ui.label(f"{per_k:.1f}/k").classes("stat-row-perk")
             if breakdown:
                 row.on("click", lambda _, lbl=label, bd=breakdown, f=fmt: _show_breakdown(lbl, bd, f))
 
@@ -2030,11 +2094,11 @@ def _build_eval_tab() -> None:
         if not hero:
             return
 
-        build   = Build(items=list(_build_items))
+        build   = Build(items=list(state.build_items))
         boons   = _current_boons()
         ab_upgrades = _current_ability_upgrades_map()
         acc     = (bld_acc.value or 0) / 100.0
-        ec = _enabled_conditionals()
+        ec = state.enabled_conditionals()
         result  = BuildEngine.evaluate_build(hero, build, boons=boons, accuracy=acc, headshot_rate=0.15, enabled_conditionals=ec)
         base_r  = BuildEngine.evaluate_build(hero, Build(), boons=boons, accuracy=acc, headshot_rate=0.15, enabled_conditionals=ec)
         bs      = result.build_stats
@@ -2075,6 +2139,21 @@ def _build_eval_tab() -> None:
         total_hp = result.effective_hp
         total_regen = hero.base_regen + bs.hp_regen
 
+        # Per-1k-soul efficiency
+        total_souls = bs.total_cost + int(bld_extra_souls.value or 0)
+        base_bullet_dps = bbr.sustained_dps if bbr else 0.0
+        base_spirit_dps = DamageCalculator.hero_total_spirit_dps(
+            hero, current_spirit=int(boon_spirit),
+            cooldown_reduction=0, spirit_amp=0, resist_shred=0,
+            ability_upgrades=ab_upgrades,
+        )
+
+        def pk(delta: float) -> float | None:
+            """Per-1000-souls value, or None if no souls."""
+            if total_souls <= 0 or abs(delta) < 0.01:
+                return None
+            return delta / total_souls * 1000
+
         with stats_all:
             # ── Summary header ───────────────────────────────────
             with ui.element("div").style(
@@ -2082,174 +2161,217 @@ def _build_eval_tab() -> None:
                 "padding:8px 10px; margin-bottom:6px;"
                 "display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:4px; text-align:center;"
             ):
-                for lbl, val, color in [
-                    ("Gun DPS",    f"{bullet_dps:.1f}",   "#a0e890"),
-                    ("Spirit DPS", f"{spirit_dps:.1f}",   "#c090f0"),
-                    ("EHP",        f"{total_hp:.0f}",     "#90a8f0"),
-                    ("Regen",      f"{total_regen:.1f}/s", "#68d4a8"),
+                for lbl, val, color, delta_val in [
+                    ("Gun DPS",    f"{bullet_dps:.1f}",    "#e8a838", bullet_dps - base_bullet_dps),
+                    ("Spirit DPS", f"{spirit_dps:.1f}",    "#c090f0", spirit_dps - base_spirit_dps),
+                    ("EHP",        f"{total_hp:.0f}",      "#90a8f0", total_hp - base_r.effective_hp),
+                    ("Regen",      f"{total_regen:.1f}/s", "#6dd56e", bs.hp_regen),
                 ]:
+                    pk_val = pk(delta_val)
                     with ui.element("div"):
                         ui.label(lbl).style(f"font-size:9px; color:{color}; font-weight:700;")
-                        ui.label(val).style(f"font-size:14px; color:{color}; font-weight:700;")
+                        with ui.element("div").style(
+                            "display:flex;align-items:baseline;justify-content:center;gap:4px;"
+                        ):
+                            ui.label(val).style(f"font-size:14px; color:{color}; font-weight:700;")
+                            if pk_val is not None and abs(pk_val) >= 0.05:
+                                ui.label(f"{pk_val:.1f}/k").style("font-size:9px; color:#555;")
 
-            # ── Weapon stats ─────────────────────────────────────
-            with ui.element("div").style(
-                "margin-bottom:2px; padding:2px 6px;"
-                "border-left:3px solid #d97e1f; background:rgba(217,126,31,0.08);"
+            # ── Horizontal stat columns ──────────────────────────
+            with ui.row().classes("w-full").style(
+                "align-items:flex-start; gap:8px;"
             ):
-                ui.label("WEAPON").style(
-                    "font-size:9px; font-weight:700; color:#e8a838; letter-spacing:0.1em;"
+                # ── Weapon column ────────────────────────────────
+                weapon_col = ui.column().classes("gap-0").style(
+                    "flex:1; min-width:0; overflow:hidden;"
+                    "border-right:1px solid rgba(255,255,255,0.06); padding-right:8px;"
                 )
-            if br and br.raw_dps > 0:
-                # Build DPS breakdown: hero base + item modifiers
-                dps_bd: list[tuple[str, float]] = [("Hero Base DPS", bbr.sustained_dps if bbr else 0)]
-                if bs.weapon_damage_pct or bs.fire_rate_pct:
-                    dps_bd.append(("Item Bonus", br.sustained_dps - (bbr.sustained_dps if bbr else 0)))
-                _stat_row(stats_all, "Sustained DPS", f"{br.sustained_dps:.1f}",
-                    delta(br.sustained_dps, bbr.sustained_dps if bbr else 0),
-                    breakdown=dps_bd if len(dps_bd) > 1 else None)
-                # Bullet damage breakdown
-                dmg_bd: list[tuple[str, float]] = [("Hero Base", bbr.damage_per_bullet if bbr else 0)]
-                for src, val in (bd.get("weapon_damage_pct") or []):
-                    dmg_bd.append((src, val * (bbr.damage_per_bullet if bbr else 0)))
-                _stat_row(stats_all, "Bullet Damage",
-                    f"{br.damage_per_bullet:.1f}",
-                    delta(br.damage_per_bullet, bbr.damage_per_bullet if bbr else 0),
-                    breakdown=dmg_bd if len(dmg_bd) > 1 else None)
-                _stat_row(stats_all, "Shots/s",
-                    f"{br.bullets_per_second:.2f}",
-                    breakdown=_bd("fire_rate_pct"))
-                # Ammo breakdown: combine flat + pct
-                ammo_bd = []
-                for src, val in (bd.get("ammo_flat") or []):
-                    ammo_bd.append((src, val))
-                for src, val in (bd.get("ammo_pct") or []):
-                    ammo_bd.append((f"{src} (%)", val))
-                _stat_row(stats_all, "Ammo",
-                    f"{br.magazine_size}",
-                    f"+{bs.ammo_flat}" if bs.ammo_flat else (f"+{bs.ammo_pct:.0%}" if bs.ammo_pct else ""),
-                    breakdown=ammo_bd or None, fmt="int")
-                if bs.bullet_lifesteal:
-                    _stat_row(stats_all, "Bullet Lifesteal", f"{bs.bullet_lifesteal:.0%}",
-                              breakdown=_bd("bullet_lifesteal"), fmt="pct")
-                if bs.bullet_resist_shred:
-                    _stat_row(stats_all, "Bullet Shred", f"{bs.bullet_resist_shred:.0%}",
-                              breakdown=_bd("bullet_resist_shred"), fmt="pct")
-            else:
-                with stats_all:
-                    ui.label(f"No gun data").style("color:#555; font-size:10px; padding:2px 8px;")
+                with weapon_col:
+                    with ui.element("div").style(
+                        "margin-bottom:2px; padding:2px 6px;"
+                        "border-left:3px solid #d97e1f; background:rgba(217,126,31,0.08);"
+                    ):
+                        ui.label("WEAPON").style(
+                            "font-size:9px; font-weight:700; color:#e8a838; letter-spacing:0.1em;"
+                        )
+                if br and br.raw_dps > 0:
+                    dps_bd: list[tuple[str, float]] = [("Hero Base DPS", bbr.sustained_dps if bbr else 0)]
+                    if bs.weapon_damage_pct or bs.fire_rate_pct:
+                        dps_bd.append(("Item Bonus", br.sustained_dps - (bbr.sustained_dps if bbr else 0)))
+                    dps_delta = br.sustained_dps - (bbr.sustained_dps if bbr else 0)
+                    _stat_row(weapon_col, "Sustained DPS", f"{br.sustained_dps:.1f}",
+                        delta(br.sustained_dps, bbr.sustained_dps if bbr else 0),
+                        breakdown=dps_bd if len(dps_bd) > 1 else None,
+                        per_k=pk(dps_delta))
+                    dmg_bd: list[tuple[str, float]] = [("Hero Base", bbr.damage_per_bullet if bbr else 0)]
+                    for src, val in (bd.get("weapon_damage_pct") or []):
+                        dmg_bd.append((src, val * (bbr.damage_per_bullet if bbr else 0)))
+                    dmg_delta = br.damage_per_bullet - (bbr.damage_per_bullet if bbr else 0)
+                    _stat_row(weapon_col, "Bullet Damage",
+                        f"{br.damage_per_bullet:.1f}",
+                        delta(br.damage_per_bullet, bbr.damage_per_bullet if bbr else 0),
+                        breakdown=dmg_bd if len(dmg_bd) > 1 else None,
+                        per_k=pk(dmg_delta))
+                    shots_delta = br.bullets_per_second - (bbr.bullets_per_second if bbr else 0)
+                    _stat_row(weapon_col, "Shots/s",
+                        f"{br.bullets_per_second:.2f}",
+                        breakdown=_bd("fire_rate_pct"),
+                        per_k=pk(shots_delta))
+                    ammo_bd = []
+                    for src, val in (bd.get("ammo_flat") or []):
+                        ammo_bd.append((src, val))
+                    for src, val in (bd.get("ammo_pct") or []):
+                        ammo_bd.append((f"{src} (%)", val))
+                    ammo_delta = br.magazine_size - (bbr.magazine_size if bbr else 0)
+                    _stat_row(weapon_col, "Ammo",
+                        f"{br.magazine_size}",
+                        f"+{bs.ammo_flat}" if bs.ammo_flat else (f"+{bs.ammo_pct:.0%}" if bs.ammo_pct else ""),
+                        breakdown=ammo_bd or None, fmt="int",
+                        per_k=pk(ammo_delta))
+                    if bs.bullet_lifesteal:
+                        _stat_row(weapon_col, "Bullet Lifesteal", f"{bs.bullet_lifesteal:.0%}",
+                                  breakdown=_bd("bullet_lifesteal"), fmt="pct",
+                                  per_k=pk(bs.bullet_lifesteal))
+                    if bs.bullet_resist_shred:
+                        _stat_row(weapon_col, "Bullet Shred", f"{bs.bullet_resist_shred:.0%}",
+                                  breakdown=_bd("bullet_resist_shred"), fmt="pct",
+                                  per_k=pk(bs.bullet_resist_shred))
+                else:
+                    with weapon_col:
+                        ui.label("No gun data").style("color:#555; font-size:10px; padding:2px 8px;")
 
-            # ── Vitality stats ───────────────────────────────────
-            with ui.element("div").style(
-                "margin:4px 0 2px; padding:2px 6px;"
-                "border-left:3px solid #4caf50; background:rgba(76,175,80,0.08);"
-            ):
-                ui.label("VITALITY").style(
-                    "font-size:9px; font-weight:700; color:#68b45c; letter-spacing:0.1em;"
+                # ── Vitality column ──────────────────────────────
+                vitality_col = ui.column().classes("gap-0").style(
+                    "flex:1; min-width:0; overflow:hidden;"
+                    "border-right:1px solid rgba(255,255,255,0.06); padding-right:8px;"
                 )
-            # EHP breakdown
-            ehp_bd: list[tuple[str, float]] = [("Base HP", hero.base_hp)]
-            if boons and hero.hp_gain:
-                ehp_bd.append(("Boon Scaling", hero.hp_gain * boons))
-            if bs.base_hp_pct:
-                ehp_bd.append(("Vitality Shop Bonus", base_hp * bs.base_hp_pct))
-            for src, val in (bd.get("bonus_hp") or []):
-                ehp_bd.append((src, val))
-            for src, val in (bd.get("bullet_shield") or []):
-                ehp_bd.append((f"{src} (B Shield)", val))
-            for src, val in (bd.get("spirit_shield") or []):
-                ehp_bd.append((f"{src} (S Shield)", val))
-            _stat_row(stats_all, "Eff HP", f"{total_hp:.0f}",
-                delta(total_hp, base_r.effective_hp),
-                breakdown=ehp_bd)
-            # Base HP breakdown
-            basehp_bd: list[tuple[str, float]] = [("Hero Base", hero.base_hp)]
-            if boons and hero.hp_gain:
-                basehp_bd.append(("Boon Scaling", hero.hp_gain * boons))
-            _stat_row(stats_all, "Base HP", f"{base_hp:.0f}",
-                breakdown=basehp_bd if boons else None)
-            if bs.bonus_hp:
-                _stat_row(stats_all, "Bonus HP", f"+{bs.bonus_hp:.0f}",
-                          breakdown=_bd("bonus_hp"))
-            if bs.bullet_shield or bs.spirit_shield:
-                shield_bd = []
+                with vitality_col:
+                    with ui.element("div").style(
+                        "margin-bottom:2px; padding:2px 6px;"
+                        "border-left:3px solid #4caf50; background:rgba(76,175,80,0.08);"
+                    ):
+                        ui.label("VITALITY").style(
+                            "font-size:9px; font-weight:700; color:#68b45c; letter-spacing:0.1em;"
+                        )
+                ehp_bd: list[tuple[str, float]] = [("Base HP", hero.base_hp)]
+                if boons and hero.hp_gain:
+                    ehp_bd.append(("Boon Scaling", hero.hp_gain * boons))
+                if bs.base_hp_pct:
+                    ehp_bd.append(("Vitality Shop Bonus", base_hp * bs.base_hp_pct))
+                for src, val in (bd.get("bonus_hp") or []):
+                    ehp_bd.append((src, val))
                 for src, val in (bd.get("bullet_shield") or []):
-                    shield_bd.append((f"{src} (Bullet)", val))
+                    ehp_bd.append((f"{src} (B Shield)", val))
                 for src, val in (bd.get("spirit_shield") or []):
-                    shield_bd.append((f"{src} (Spirit)", val))
-                _stat_row(stats_all, "Shields",
-                    f"B:{bs.bullet_shield:.0f} S:{bs.spirit_shield:.0f}",
-                    breakdown=shield_bd or None)
-            # Regen breakdown
-            regen_bd: list[tuple[str, float]] = [("Hero Base", hero.base_regen)]
-            for src, val in (bd.get("hp_regen") or []):
-                regen_bd.append((src, val))
-            _stat_row(stats_all, "HP Regen", f"+{total_regen:.1f}/s",
-                f"+{bs.hp_regen:.1f}" if bs.hp_regen else "",
-                breakdown=regen_bd if bs.hp_regen else None)
-            if bs.bullet_resist_pct:
-                _stat_row(stats_all, "Bullet Resist", f"{bs.bullet_resist_pct:.0%}",
-                          breakdown=_bd("bullet_resist_pct"), fmt="pct")
-            if bs.spirit_resist_pct:
-                _stat_row(stats_all, "Spirit Resist", f"{bs.spirit_resist_pct:.0%}",
-                          breakdown=_bd("spirit_resist_pct"), fmt="pct")
+                    ehp_bd.append((f"{src} (S Shield)", val))
+                _stat_row(vitality_col, "Eff HP", f"{total_hp:.0f}",
+                    delta(total_hp, base_r.effective_hp),
+                    breakdown=ehp_bd,
+                    per_k=pk(total_hp - base_r.effective_hp))
+                basehp_bd: list[tuple[str, float]] = [("Hero Base", hero.base_hp)]
+                if boons and hero.hp_gain:
+                    basehp_bd.append(("Boon Scaling", hero.hp_gain * boons))
+                _stat_row(vitality_col, "Base HP", f"{base_hp:.0f}",
+                    breakdown=basehp_bd if boons else None)
+                if bs.bonus_hp:
+                    _stat_row(vitality_col, "Bonus HP", f"+{bs.bonus_hp:.0f}",
+                              breakdown=_bd("bonus_hp"),
+                              per_k=pk(bs.bonus_hp))
+                if bs.bullet_shield or bs.spirit_shield:
+                    shield_bd = []
+                    for src, val in (bd.get("bullet_shield") or []):
+                        shield_bd.append((f"{src} (Bullet)", val))
+                    for src, val in (bd.get("spirit_shield") or []):
+                        shield_bd.append((f"{src} (Spirit)", val))
+                    _stat_row(vitality_col, "Shields",
+                        f"B:{bs.bullet_shield:.0f} S:{bs.spirit_shield:.0f}",
+                        breakdown=shield_bd or None,
+                        per_k=pk(bs.bullet_shield + bs.spirit_shield))
+                regen_bd: list[tuple[str, float]] = [("Hero Base", hero.base_regen)]
+                for src, val in (bd.get("hp_regen") or []):
+                    regen_bd.append((src, val))
+                _stat_row(vitality_col, "HP Regen", f"+{total_regen:.1f}/s",
+                    f"+{bs.hp_regen:.1f}" if bs.hp_regen else "",
+                    breakdown=regen_bd if bs.hp_regen else None,
+                    per_k=pk(bs.hp_regen))
+                if bs.bullet_resist_pct:
+                    _stat_row(vitality_col, "Bullet Resist", f"{bs.bullet_resist_pct:.0%}",
+                              breakdown=_bd("bullet_resist_pct"), fmt="pct",
+                              per_k=pk(bs.bullet_resist_pct))
+                if bs.spirit_resist_pct:
+                    _stat_row(vitality_col, "Spirit Resist", f"{bs.spirit_resist_pct:.0%}",
+                              breakdown=_bd("spirit_resist_pct"), fmt="pct",
+                              per_k=pk(bs.spirit_resist_pct))
 
-            # ── Spirit stats ─────────────────────────────────────
-            with ui.element("div").style(
-                "margin:4px 0 2px; padding:2px 6px;"
-                "border-left:3px solid #9c5dce; background:rgba(156,93,206,0.08);"
-            ):
-                ui.label("SPIRIT").style(
-                    "font-size:9px; font-weight:700; color:#c084fc; letter-spacing:0.1em;"
+                # ── Spirit column ────────────────────────────────
+                spirit_col = ui.column().classes("gap-0").style(
+                    "flex:1; min-width:0; overflow:hidden;"
                 )
-            # Spirit power breakdown
-            sp_bd: list[tuple[str, float]] = []
-            for src, val in (bd.get("spirit_power") or []):
-                sp_bd.append((src, val))
-            if boons and hero.spirit_gain:
-                sp_bd.append(("Boon Scaling", hero.spirit_gain * boons))
-            if bs.spirit_power_pct:
-                pre_mult = bs.spirit_power + boon_spirit
-                sp_bd.append((f"Spirit Power % (+{bs.spirit_power_pct:.0%})", pre_mult * bs.spirit_power_pct))
-            _stat_row(stats_all, "Spirit Power", f"+{total_spirit}" if total_spirit else "0",
-                f"(+{bs.spirit_power:.0f} items)" if bs.spirit_power else "",
-                breakdown=sp_bd or None)
-            if bs.spirit_power_pct:
-                _stat_row(stats_all, "Spirit Power %", f"+{bs.spirit_power_pct:.0%}",
-                          breakdown=_bd("spirit_power_pct"), fmt="pct")
-            if bs.spirit_amp_pct:
-                _stat_row(stats_all, "Spirit Amp", f"+{bs.spirit_amp_pct:.0%}",
-                          breakdown=_bd("spirit_amp_pct"), fmt="pct")
-            if bs.spirit_lifesteal:
-                _stat_row(stats_all, "Spirit Lifesteal", f"{bs.spirit_lifesteal:.0%}",
-                          breakdown=_bd("spirit_lifesteal"), fmt="pct")
-            if bs.cooldown_reduction:
-                _stat_row(stats_all, "CDR", f"{bs.cooldown_reduction:.0%}",
-                          breakdown=_bd("cooldown_reduction"), fmt="pct")
-            if bs.spirit_resist_shred:
-                _stat_row(stats_all, "Spirit Shred", f"{bs.spirit_resist_shred:.0%}",
-                          breakdown=_bd("spirit_resist_shred"), fmt="pct")
-            _stat_row(stats_all, "Spirit DPS", f"{spirit_dps:.1f}" if spirit_dps > 0 else "-")
+                with spirit_col:
+                    with ui.element("div").style(
+                        "margin-bottom:2px; padding:2px 6px;"
+                        "border-left:3px solid #9c5dce; background:rgba(156,93,206,0.08);"
+                    ):
+                        ui.label("SPIRIT").style(
+                            "font-size:9px; font-weight:700; color:#c084fc; letter-spacing:0.1em;"
+                        )
+                sp_bd: list[tuple[str, float]] = []
+                for src, val in (bd.get("spirit_power") or []):
+                    sp_bd.append((src, val))
+                if boons and hero.spirit_gain:
+                    sp_bd.append(("Boon Scaling", hero.spirit_gain * boons))
+                if bs.spirit_power_pct:
+                    pre_mult = bs.spirit_power + boon_spirit
+                    sp_bd.append((f"Spirit Power % (+{bs.spirit_power_pct:.0%})", pre_mult * bs.spirit_power_pct))
+                sp_delta = total_spirit - int(boon_spirit) if boon_spirit else total_spirit
+                _stat_row(spirit_col, "Spirit Power", f"+{total_spirit}" if total_spirit else "0",
+                    f"(+{bs.spirit_power:.0f} items)" if bs.spirit_power else "",
+                    breakdown=sp_bd or None,
+                    per_k=pk(sp_delta))
+                if bs.spirit_power_pct:
+                    _stat_row(spirit_col, "Spirit Power %", f"+{bs.spirit_power_pct:.0%}",
+                              breakdown=_bd("spirit_power_pct"), fmt="pct",
+                              per_k=pk(bs.spirit_power_pct))
+                if bs.spirit_amp_pct:
+                    _stat_row(spirit_col, "Spirit Amp", f"+{bs.spirit_amp_pct:.0%}",
+                              breakdown=_bd("spirit_amp_pct"), fmt="pct",
+                              per_k=pk(bs.spirit_amp_pct))
+                if bs.spirit_lifesteal:
+                    _stat_row(spirit_col, "Spirit Lifesteal", f"{bs.spirit_lifesteal:.0%}",
+                              breakdown=_bd("spirit_lifesteal"), fmt="pct",
+                              per_k=pk(bs.spirit_lifesteal))
+                if bs.cooldown_reduction:
+                    _stat_row(spirit_col, "CDR", f"{bs.cooldown_reduction:.0%}",
+                              breakdown=_bd("cooldown_reduction"), fmt="pct",
+                              per_k=pk(bs.cooldown_reduction))
+                if bs.spirit_resist_shred:
+                    _stat_row(spirit_col, "Spirit Shred", f"{bs.spirit_resist_shred:.0%}",
+                              breakdown=_bd("spirit_resist_shred"), fmt="pct",
+                              per_k=pk(bs.spirit_resist_shred))
+                spirit_dps_delta = spirit_dps - base_spirit_dps
+                _stat_row(spirit_col, "Spirit DPS",
+                    f"{spirit_dps:.1f}" if spirit_dps > 0 else "-",
+                    per_k=pk(spirit_dps_delta))
 
+            # ── Footer: Combined DPS + Total Cost ────────────────
             ui.separator().style("margin:4px 0;")
-            # Combined DPS breakdown
             combo_bd: list[tuple[str, float]] = []
             if bullet_dps > 0:
                 combo_bd.append(("Gun DPS", bullet_dps))
             if spirit_dps > 0:
                 combo_bd.append(("Spirit DPS", spirit_dps))
+            combined_delta = combined_dps - base_bullet_dps - base_spirit_dps
             _stat_row(stats_all, "Combined DPS", f"{combined_dps:.1f}",
-                      breakdown=combo_bd if len(combo_bd) > 1 else None)
-            # Cost breakdown
+                      breakdown=combo_bd if len(combo_bd) > 1 else None,
+                      per_k=pk(combined_delta))
             cost_bd: list[tuple[str, float]] = [(i.name, i.cost) for i in build.items]
             _stat_row(stats_all, "Total Cost", f"${bs.total_cost:,}",
                       breakdown=cost_bd or None, fmt="int")
 
     # ── Event wiring ──────────────────────────────────────────────
     def _on_hero_boons(_=None):
-        global _build_hero_name, _build_boons
-        _build_hero_name = bld_hero.value or ""
-        _build_boons = _current_boons()
+        state.build_hero_name = bld_hero.value or ""
+        state.build_boons = _current_boons()
         refresh_build_display()   # updates hero summary + ability grid too
         update_results()
         if _is_dynamic_sort():
@@ -2263,16 +2385,14 @@ def _build_eval_tab() -> None:
     bld_acc.on_value_change(update_results)
 
     # Initialize shared build state
-    global _build_hero_name, _build_boons
-    _build_hero_name = bld_hero.value or ""
-    _build_boons = _current_boons()
+    state.build_hero_name = bld_hero.value or ""
+    state.build_boons = _current_boons()
 
     refresh_build_display()
     update_results()
 
     def load_build_from_saved(data: dict):
         """Populate the Build Lab from a saved build dict."""
-        global _build_boons, _build_hero_name
         hero_name = data.get("hero_name", "")
         item_names = data.get("items", [])
         extra_souls = data.get("extra_souls", 0)
@@ -2283,22 +2403,22 @@ def _build_eval_tab() -> None:
             bld_hero.set_value(hero_name)
 
         # Clear and load items
-        _build_items.clear()
+        state.build_items.clear()
         for iname in item_names:
             itm = _items.get(iname)
             if itm:
-                _build_items.append(itm)
+                state.build_items.append(itm)
 
         # Set extra souls
         bld_extra_souls.set_value(extra_souls)
 
         # Restore ability upgrades
-        _build_ability_upgrades.clear()
+        state.build_ability_upgrades.clear()
         for h, upgs in ability_upg.items():
-            _build_ability_upgrades[h] = {int(k): v for k, v in upgs.items()}
+            state.build_ability_upgrades[h] = {int(k): v for k, v in upgs.items()}
 
-        _build_hero_name = hero_name
-        _build_boons = _current_boons()
+        state.build_hero_name = hero_name
+        state.build_boons = _current_boons()
 
         refresh_build_display()
         update_results()
@@ -2327,7 +2447,7 @@ def _classify_build_type(gun_dps: float, spirit_dps: float) -> str:
     return "Hybrid"
 
 
-def _build_saved_builds_tab(load_build_callback) -> callable:
+def _build_saved_builds_tab(state: _PageState, load_build_callback) -> callable:
     """Build the Saved Builds tab. Returns a refresh function."""
 
     hero_filter = ui.select(
@@ -2449,7 +2569,7 @@ def _build_saved_builds_tab(load_build_callback) -> callable:
                             "background:rgba(255,255,255,0.03);border-radius:6px;padding:6px 4px;"
                         ):
                             for s_label, s_val, s_color in [
-                                ("GUN DPS", f"{gun_dps:.1f}", "#a0e890"),
+                                ("GUN DPS", f"{gun_dps:.1f}", "#e8a838"),
                                 ("SPIRIT DPS", f"{spirit_dps:.1f}", "#c090f0"),
                                 ("EHP", f"{ehp:.0f}", "#90a8f0"),
                             ]:
@@ -2507,10 +2627,10 @@ def _build_saved_builds_tab(load_build_callback) -> callable:
     return refresh_saved_builds
 
 
-def _build_settings_tab() -> None:
+def _build_settings_tab(state: _PageState) -> None:
     """Settings tab for configuring simulation parameters.
 
-    All settings are stored in the global _sim_settings dict, which is
+    All settings are stored in the per-client state.sim_settings dict, which is
     read by the Simulation tab and Build tab simulation scoring.
     """
     with ui.row().classes("w-full gap-8 items-start").style("min-height: 600px;"):
@@ -2521,37 +2641,37 @@ def _build_settings_tab() -> None:
 
             with ui.column().classes("gap-2 mt-2"):
                 set_duration = ui.number(
-                    label="Sim Duration (s)", value=_sim_settings["duration"],
+                    label="Sim Duration (s)", value=state.sim_settings["duration"],
                     min=1, max=60, step=1,
                 ).classes("w-44")
                 ui.separator().style("margin:4px 0;")
 
                 ui.label("Accuracy Model").style("color:#e8a838; font-size:11px; font-weight:700;")
                 set_accuracy = ui.number(
-                    label="Accuracy %", value=_sim_settings["accuracy"] * 100,
+                    label="Accuracy %", value=state.sim_settings["accuracy"] * 100,
                     min=0, max=100, step=1,
                 ).classes("w-36")
                 set_headshot = ui.number(
-                    label="Headshot %", value=_sim_settings["headshot_rate"] * 100,
+                    label="Headshot %", value=state.sim_settings["headshot_rate"] * 100,
                     min=0, max=100, step=1,
                 ).classes("w-36")
                 set_hs_mult = ui.number(
-                    label="Headshot Multiplier", value=_sim_settings["headshot_multiplier"],
+                    label="Headshot Multiplier", value=state.sim_settings["headshot_multiplier"],
                     min=1.0, max=3.0, step=0.05,
                 ).classes("w-36")
 
                 ui.separator().style("margin:4px 0;")
                 ui.label("Uptime").style("color:#68b45c; font-size:11px; font-weight:700;")
                 set_wpn_up = ui.number(
-                    label="Weapon Uptime %", value=_sim_settings["weapon_uptime"] * 100,
+                    label="Weapon Uptime %", value=state.sim_settings["weapon_uptime"] * 100,
                     min=0, max=100, step=5,
                 ).classes("w-36")
                 set_ability_up = ui.number(
-                    label="Ability Uptime %", value=_sim_settings["ability_uptime"] * 100,
+                    label="Ability Uptime %", value=state.sim_settings["ability_uptime"] * 100,
                     min=0, max=200, step=10,
                 ).classes("w-36")
                 set_active_up = ui.number(
-                    label="Active Item Uptime %", value=_sim_settings["active_item_uptime"] * 100,
+                    label="Active Item Uptime %", value=state.sim_settings["active_item_uptime"] * 100,
                     min=0, max=200, step=10,
                 ).classes("w-36")
 
@@ -2559,18 +2679,18 @@ def _build_settings_tab() -> None:
                 ui.label("Melee").style("color:#c084fc; font-size:11px; font-weight:700;")
                 set_melee_weave = ui.checkbox(
                     "Weave light melee between reloads",
-                    value=_sim_settings["weave_melee"],
+                    value=state.sim_settings["weave_melee"],
                 )
                 set_heavy_reload = ui.checkbox(
                     "Heavy melee during reload",
-                    value=_sim_settings["melee_after_reload"],
+                    value=state.sim_settings["melee_after_reload"],
                 )
 
                 ui.separator().style("margin:4px 0;")
                 ui.label("Combat Mode").style("color:#c084fc; font-size:11px; font-weight:700;")
                 set_bidirectional = ui.checkbox(
                     "Bidirectional (defender fights back)",
-                    value=_sim_settings["bidirectional"],
+                    value=state.sim_settings["bidirectional"],
                 )
 
                 ui.separator().style("margin:8px 0;")
@@ -2582,23 +2702,23 @@ def _build_settings_tab() -> None:
                 ).style("color:#888; font-size:10px; margin-bottom:4px;")
                 set_cond_shred = ui.checkbox(
                     "On-hit Shred (resist reduction)",
-                    value=_sim_settings["cond_shred"],
+                    value=state.sim_settings["cond_shred"],
                 )
                 set_cond_weapon = ui.checkbox(
                     "Weapon bonuses (damage, fire rate, ammo)",
-                    value=_sim_settings["cond_weapon"],
+                    value=state.sim_settings["cond_weapon"],
                 )
                 set_cond_spirit = ui.checkbox(
                     "Spirit bonuses (spirit power, CDR)",
-                    value=_sim_settings["cond_spirit"],
+                    value=state.sim_settings["cond_spirit"],
                 )
                 set_cond_defense = ui.checkbox(
                     "Defensive bonuses (resist, shields, HP)",
-                    value=_sim_settings["cond_defense"],
+                    value=state.sim_settings["cond_defense"],
                 )
                 set_cond_sustain = ui.checkbox(
                     "Sustain bonuses (lifesteal, regen)",
-                    value=_sim_settings["cond_sustain"],
+                    value=state.sim_settings["cond_sustain"],
                 )
 
         # ══ Column 2: Ability Configuration ══════════════════════
@@ -2611,7 +2731,7 @@ def _build_settings_tab() -> None:
 
             ability_hero_select = ui.select(
                 options=_hero_names,
-                value=_build_hero_name or (_hero_names[0] if _hero_names else ""),
+                value=state.build_hero_name or (_hero_names[0] if _hero_names else ""),
                 label="Hero",
             ).classes("w-52")
 
@@ -2623,8 +2743,8 @@ def _build_settings_tab() -> None:
                 if not hero or not hero.abilities:
                     return
                 hero_name = hero.name
-                disabled = _sim_settings["disabled_abilities"].get(hero_name, set())
-                priority = _sim_settings["ability_priority"].get(hero_name, [])
+                disabled = state.sim_settings["disabled_abilities"].get(hero_name, set())
+                priority = state.sim_settings["ability_priority"].get(hero_name, [])
 
                 with ability_config_area:
                     for i, ability in enumerate(hero.abilities):
@@ -2676,12 +2796,12 @@ def _build_settings_tab() -> None:
                                 # Enable/disable toggle
                                 def make_toggle(idx: int, hname: str):
                                     def on_toggle(e):
-                                        if hname not in _sim_settings["disabled_abilities"]:
-                                            _sim_settings["disabled_abilities"][hname] = set()
+                                        if hname not in state.sim_settings["disabled_abilities"]:
+                                            state.sim_settings["disabled_abilities"][hname] = set()
                                         if e.value:
-                                            _sim_settings["disabled_abilities"][hname].discard(idx)
+                                            state.sim_settings["disabled_abilities"][hname].discard(idx)
                                         else:
-                                            _sim_settings["disabled_abilities"][hname].add(idx)
+                                            state.sim_settings["disabled_abilities"][hname].add(idx)
                                     return on_toggle
 
                                 ui.switch(
@@ -2705,7 +2825,7 @@ def _build_settings_tab() -> None:
                         def on_order(e):
                             try:
                                 indices = [int(x.strip()) - 1 for x in e.value.split(",") if x.strip()]
-                                _sim_settings["ability_priority"][hname] = indices
+                                state.sim_settings["ability_priority"][hname] = indices
                             except ValueError:
                                 pass
                         return on_order
@@ -2734,8 +2854,8 @@ def _build_settings_tab() -> None:
                     continue
 
                 colors = _CAT_COLORS.get(item.category, _CAT_COLORS["weapon"])
-                cur_dps = _sim_settings["custom_item_dps"].get(item_name, 0.0)
-                cur_ehp = _sim_settings["custom_item_ehp"].get(item_name, 0.0)
+                cur_dps = state.sim_settings["custom_item_dps"].get(item_name, 0.0)
+                cur_ehp = state.sim_settings["custom_item_ehp"].get(item_name, 0.0)
 
                 with ui.element("div").style(
                     f"display:flex; align-items:center; gap:8px; padding:4px 6px;"
@@ -2760,7 +2880,7 @@ def _build_settings_tab() -> None:
                     # DPS value input
                     def make_dps_handler(iname: str):
                         def on_change(e):
-                            _sim_settings["custom_item_dps"][iname] = float(e.value or 0)
+                            state.sim_settings["custom_item_dps"][iname] = float(e.value or 0)
                         return on_change
 
                     ui.number(
@@ -2771,7 +2891,7 @@ def _build_settings_tab() -> None:
                     # EHP value input
                     def make_ehp_handler(iname: str):
                         def on_change(e):
-                            _sim_settings["custom_item_ehp"][iname] = float(e.value or 0)
+                            state.sim_settings["custom_item_ehp"][iname] = float(e.value or 0)
                         return on_change
 
                     ui.number(
@@ -2782,18 +2902,18 @@ def _build_settings_tab() -> None:
     # ── Save settings to global state on any change ──────────────
     def _save_setting(key: str, divisor: float = 1.0):
         def handler(e):
-            _sim_settings[key] = (float(e.value or 0)) / divisor
+            state.sim_settings[key] = (float(e.value or 0)) / divisor
         return handler
 
     def _save_bool(key: str):
         def handler(e):
-            _sim_settings[key] = bool(e.value)
+            state.sim_settings[key] = bool(e.value)
         return handler
 
-    set_duration.on_value_change(lambda e: _sim_settings.__setitem__("duration", float(e.value or 15)))
+    set_duration.on_value_change(lambda e: state.sim_settings.__setitem__("duration", float(e.value or 15)))
     set_accuracy.on_value_change(_save_setting("accuracy", 100.0))
     set_headshot.on_value_change(_save_setting("headshot_rate", 100.0))
-    set_hs_mult.on_value_change(lambda e: _sim_settings.__setitem__("headshot_multiplier", float(e.value or 1.5)))
+    set_hs_mult.on_value_change(lambda e: state.sim_settings.__setitem__("headshot_multiplier", float(e.value or 1.5)))
     set_wpn_up.on_value_change(_save_setting("weapon_uptime", 100.0))
     set_ability_up.on_value_change(_save_setting("ability_uptime", 100.0))
     set_active_up.on_value_change(_save_setting("active_item_uptime", 100.0))
@@ -2807,71 +2927,16 @@ def _build_settings_tab() -> None:
     set_cond_sustain.on_value_change(_save_bool("cond_sustain"))
 
 
-def _get_ability_upgrades_map() -> dict[int, list[int]]:
-    """Return ability upgrades for current build hero as {idx: [tiers]}.
 
-    Uses the global _build_hero_name and _build_ability_upgrades state.
-    """
-    upgrades = _build_ability_upgrades.get(_build_hero_name, {})
-    return {idx: list(range(1, max_tier + 1)) for idx, max_tier in upgrades.items()}
-
-
-def _get_sim_settings(atk_boons: int = 0, def_boons: int = 0) -> SimSettings:
-    """Build a SimSettings from the global _sim_settings dict."""
-    return SimSettings(
-        duration=_sim_settings["duration"],
-        accuracy=_sim_settings["accuracy"],
-        headshot_rate=_sim_settings["headshot_rate"],
-        headshot_multiplier=_sim_settings["headshot_multiplier"],
-        weapon_uptime=_sim_settings["weapon_uptime"],
-        ability_uptime=_sim_settings["ability_uptime"],
-        active_item_uptime=_sim_settings["active_item_uptime"],
-        weave_melee=_sim_settings["weave_melee"],
-        melee_after_reload=_sim_settings["melee_after_reload"],
-        attacker_boons=atk_boons,
-        defender_boons=def_boons,
-        bidirectional=_sim_settings["bidirectional"],
-    )
-
-
-def _get_ability_schedule(hero_name: str, hero: HeroStats) -> list:
-    """Build ability schedule respecting disabled abilities and priority order."""
-    from ..engine.simulation import AbilityUse
-
-    disabled = _sim_settings["disabled_abilities"].get(hero_name, set())
-    priority = _sim_settings["ability_priority"].get(hero_name, [])
-
-    # Determine which abilities to schedule
-    schedulable = []
-    for i, ability in enumerate(hero.abilities):
-        if i in disabled:
-            continue
-        if ability.base_damage > 0 and ability.cooldown > 0:
-            schedulable.append(i)
-
-    # Reorder by priority if specified
-    if priority:
-        ordered = [i for i in priority if i in schedulable]
-        remaining = [i for i in schedulable if i not in ordered]
-        schedulable = ordered + remaining
-
-    schedule = []
-    for rank, idx in enumerate(schedulable):
-        schedule.append(AbilityUse(
-            ability_index=idx,
-            first_use=0.1 * (rank + 1),
-            use_on_cooldown=True,
-        ))
-    return schedule
 
 
 # ── Tab: Simulation ─────────────────────────────────────────────
 
 
-def _build_simulation_tab() -> None:
+def _build_simulation_tab(state: _PageState) -> None:
     """Simulation tab that uses the Build tab's attacker build.
 
-    The attacker hero + items come from the Build tab (shared global state).
+    The attacker hero + items come from the Build tab (per-client state).
     This tab only configures the defender and simulation settings.
     """
     sim_def_items: list[Item] = []
@@ -2889,18 +2954,18 @@ def _build_simulation_tab() -> None:
 
             def _refresh_atk_summary():
                 sim_atk_summary.clear()
-                hero = _heroes.get(_build_hero_name)
+                hero = _heroes.get(state.build_hero_name)
                 with sim_atk_summary:
                     if hero:
                         _render_hero_summary_with_tooltips(hero)
-                        n = len(_build_items)
-                        cost = sum(i.cost for i in _build_items)
+                        n = len(state.build_items)
+                        cost = sum(i.cost for i in state.build_items)
                         ui.label(
-                            f"{n} items | {cost:,} souls | {_build_boons} boons"
+                            f"{n} items | {cost:,} souls | {state.build_boons} boons"
                         ).style("color:#888; font-size:11px;")
-                        if _build_items:
+                        if state.build_items:
                             with ui.element("div").classes("bl-item-grid"):
-                                for item in _build_items:
+                                for item in state.build_items:
                                     colors = _CAT_COLORS.get(item.category, _CAT_COLORS["weapon"])
                                     with ui.element("div").classes("bl-slot-filled").style(
                                         f"border-color:{colors['border']}; background:{colors['bg']};"
@@ -2965,7 +3030,7 @@ def _build_simulation_tab() -> None:
                 )
 
                 def _refresh_settings_summary():
-                    s = _sim_settings
+                    s = state.sim_settings
                     bidir_tag = " | Bidirectional: ON" if s['bidirectional'] else ""
                     sim_settings_summary.text = (
                         f"Duration: {s['duration']:.0f}s | "
@@ -3033,7 +3098,7 @@ def _build_simulation_tab() -> None:
         sim_def_label.text = "0 items"
 
     def _run_sim():
-        atk_hero = _heroes.get(_build_hero_name)
+        atk_hero = _heroes.get(state.build_hero_name)
         def_hero = _heroes.get(sim_def_hero.value)
         if not atk_hero:
             sim_results_area.clear()
@@ -3046,16 +3111,16 @@ def _build_simulation_tab() -> None:
         if not def_hero:
             return
 
-        settings = _get_sim_settings(
-            atk_boons=_build_boons,
+        settings = state.get_sim_settings(
+            atk_boons=state.build_boons,
             def_boons=int(sim_def_boons.value or 0),
         )
-        ability_schedule = _get_ability_schedule(atk_hero.name, atk_hero)
-        ability_upgrades_map = _get_ability_upgrades_map()
+        ability_schedule = state.get_ability_schedule(atk_hero.name, atk_hero)
+        ability_upgrades_map = state.get_ability_upgrades_map()
 
         config = SimConfig(
             attacker=atk_hero,
-            attacker_build=Build(items=list(_build_items)),
+            attacker_build=Build(items=list(state.build_items)),
             defender=def_hero,
             defender_build=Build(items=list(sim_def_items)),
             settings=settings,
@@ -3074,7 +3139,7 @@ def _build_simulation_tab() -> None:
             # ── Matchup header ───────────────────────────────────
             mode_tag = " [BIDIRECTIONAL]" if is_bidir else ""
             ui.label(
-                f"{atk_hero.name} ({len(_build_items)} items, {_build_boons} boons) vs "
+                f"{atk_hero.name} ({len(state.build_items)} items, {state.build_boons} boons) vs "
                 f"{def_hero.name} ({len(sim_def_items)} items){mode_tag}"
             ).style("color:#e8c252; font-size:12px; font-weight:600; margin-bottom:4px;")
 
@@ -3335,6 +3400,7 @@ def _build_simulation_tab() -> None:
 
 
 def _sim_item_scores(
+    state: _PageState,
     hero: HeroStats,
     current_items: list[Item],
     candidates: list[Item],
@@ -3343,13 +3409,12 @@ def _sim_item_scores(
 ) -> dict[str, dict[str, float]]:
     """Score each candidate item by running a quick simulation.
 
-    Uses global _sim_settings for combat parameters and custom item values.
     Modes: "gun" (weapon-only), "spirit" (abilities on CD), "hybrid" (combined).
     """
     dummy = HeroStats(name="Dummy Target", base_hp=2500, base_regen=0)
 
     # Build settings from global config, override uptime per mode
-    base_settings = _get_sim_settings(atk_boons=boons, def_boons=0)
+    base_settings = state.get_sim_settings(atk_boons=boons, def_boons=0)
     if mode == "gun":
         base_settings.ability_uptime = 0.0
     elif mode == "spirit":
@@ -3358,8 +3423,8 @@ def _sim_item_scores(
     # Use shorter duration for scoring (performance)
     base_settings.duration = min(base_settings.duration, 10.0)
 
-    ability_schedule = _get_ability_schedule(hero.name, hero)
-    ability_upgrades_map = _get_ability_upgrades_map()
+    ability_schedule = state.get_ability_schedule(hero.name, hero)
+    ability_upgrades_map = state.get_ability_upgrades_map()
 
     base_config = SimConfig(
         attacker=hero,
@@ -3373,7 +3438,7 @@ def _sim_item_scores(
     base_dps = base_result.overall_dps
 
     # EHP baseline (defender perspective)
-    base_build_stats = BuildEngine.aggregate_stats(Build(items=list(current_items)), enabled_conditionals=_enabled_conditionals())
+    base_build_stats = BuildEngine.aggregate_stats(Build(items=list(current_items)), enabled_conditionals=state.enabled_conditionals())
     base_hp = (hero.base_hp + hero.hp_gain * boons) * (1.0 + base_build_stats.base_hp_pct)
     base_ehp = base_hp + base_build_stats.bonus_hp + base_build_stats.bullet_shield + base_build_stats.spirit_shield
     if base_build_stats.bullet_resist_pct > 0:
@@ -3382,8 +3447,8 @@ def _sim_item_scores(
         spirit_ehp_mult = 1.0 / (1.0 - min(0.9, base_build_stats.spirit_resist_pct))
         base_ehp = base_ehp * (0.5 + 0.5 * spirit_ehp_mult)
 
-    custom_dps_values = _sim_settings.get("custom_item_dps", {})
-    custom_ehp_values = _sim_settings.get("custom_item_ehp", {})
+    custom_dps_values = state.sim_settings.get("custom_item_dps", {})
+    custom_ehp_values = state.sim_settings.get("custom_item_ehp", {})
 
     scores: dict[str, dict[str, float]] = {}
 
@@ -3403,7 +3468,7 @@ def _sim_item_scores(
         test_dps = test_result.overall_dps
 
         # EHP
-        test_stats = BuildEngine.aggregate_stats(Build(items=test_items), enabled_conditionals=_enabled_conditionals())
+        test_stats = BuildEngine.aggregate_stats(Build(items=test_items), enabled_conditionals=state.enabled_conditionals())
         test_hp = (hero.base_hp + hero.hp_gain * boons) * (1.0 + test_stats.base_hp_pct)
         test_ehp = test_hp + test_stats.bonus_hp + test_stats.bullet_shield + test_stats.spirit_shield
         if test_stats.bullet_resist_pct > 0:
@@ -3452,6 +3517,7 @@ def run_gui() -> None:
 
     @ui.page("/")
     def index():
+        state = _PageState()
         ui.dark_mode(True)
         ui.add_css(_CUSTOM_CSS)
 
@@ -3489,6 +3555,52 @@ def run_gui() -> None:
 
             ui.button("Refresh Data", icon="sync", on_click=do_refresh).props("flat").classes("text-sky-400")
 
+            # ── Bug Report / Suggestion button ────────────────────
+            def _open_feedback_dialog():
+                feedback_category = {"value": "Bug"}
+                feedback_text = {"value": ""}
+
+                with ui.dialog() as dlg, ui.card().classes("w-96"):
+                    ui.label("Bug Report / Suggestion").classes("text-lg font-bold text-amber-400")
+                    cat_select = ui.select(
+                        ["Bug", "Suggestion", "Other"],
+                        value="Bug",
+                        label="Category",
+                        on_change=lambda e: feedback_category.update(value=e.value),
+                    ).classes("w-full")
+                    text_area = ui.textarea(
+                        label="Describe the issue or suggestion",
+                        placeholder="What happened? What did you expect?",
+                        on_change=lambda e: feedback_text.update(value=e.value),
+                    ).classes("w-full").props("rows=5")
+
+                    with ui.row().classes("w-full justify-end gap-2"):
+                        ui.button("Cancel", on_click=dlg.close).props("flat")
+
+                        def _submit():
+                            body = feedback_text["value"].strip()
+                            cat = feedback_category["value"]
+                            if not body:
+                                ui.notification("Please enter a description.", type="warning")
+                                return
+                            # Log with [USER_FEEDBACK] tag for easy searching in Azure
+                            log.warning(
+                                "[USER_FEEDBACK] category=%s | %s",
+                                cat, body,
+                            )
+                            dlg.close()
+                            ui.notification(
+                                "Thank you! Your feedback has been recorded.",
+                                type="positive",
+                                timeout=4,
+                            )
+
+                        ui.button("Submit", icon="send", on_click=_submit).props("color=amber")
+
+                dlg.open()
+
+            ui.button("Bug Report", icon="bug_report", on_click=_open_feedback_dialog).props("flat").classes("text-orange-400")
+
         ui.label(f"{len(_heroes)} heroes, {len(_items)} items loaded").classes("text-gray-500")
         ui.separator()
 
@@ -3501,22 +3613,23 @@ def run_gui() -> None:
 
         with ui.tab_panels(tabs, value=tab_build).classes("w-full") as panels:
             with ui.tab_panel(tab_build):
-                _build_refresh_shop, _load_build_fn = _build_eval_tab()
+                _build_refresh_shop, _load_build_fn = _build_eval_tab(state)
             with ui.tab_panel(tab_saved):
-                _refresh_saved = _build_saved_builds_tab(
+                _refresh_saved = _build_saved_builds_tab(state, 
                     load_build_callback=lambda data: (
                         _load_build_fn(data),
                         tabs.set_value("Build"),
                     ),
                 )
             with ui.tab_panel(tab_sim):
-                _build_simulation_tab()
+                _build_simulation_tab(state)
             with ui.tab_panel(tab_settings):
-                _build_settings_tab()
+                _build_settings_tab(state)
             with ui.tab_panel(tab_hero):
                 _build_hero_stats_tab()
 
         async def _on_tab_change(e):
+            log.debug("Tab changed to: %s", e.value)
             if e.value == "Saved Builds":
                 await _refresh_saved()
 
@@ -3526,6 +3639,7 @@ def run_gui() -> None:
         _build_refresh_shop()
 
     port = int(os.environ.get("PORT", 8080))
+    log.info("Starting NiceGUI server on 0.0.0.0:%d", port)
     ui.run(title="Deadlock Combat Simulator", host="0.0.0.0", port=port, show=False, reconnect_timeout=30.0)
 
 

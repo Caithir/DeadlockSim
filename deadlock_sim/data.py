@@ -765,6 +765,7 @@ def load_heroes(
         hero = _parse_hero_from_api(h, hero_items_data, weapons_list)
         heroes[hero.name] = hero
 
+    log.info("Loaded %d heroes from cache", len(heroes))
     return heroes
 
 
@@ -820,6 +821,19 @@ def load_items(*, items_data: list | None = None) -> dict[str, Item]:
         targets.sort(key=lambda t: t[0])
         items[source_name].upgrades_to = targets[0][1]
 
+    # Build component_names: for each item, resolve its component class_names to item names
+    for i in items_data:
+        if i.get("type") != "upgrade" or not i.get("shopable", False):
+            continue
+        target_name = i.get("name", "")
+        if target_name not in items:
+            continue
+        comp_items = i.get("component_items", []) or []
+        resolved = [class_to_name[c] for c in comp_items if c in class_to_name and class_to_name[c] in items]
+        if resolved:
+            items[target_name].component_names = resolved
+
+    log.info("Loaded %d shop items from cache", len(items))
     return items
 
 

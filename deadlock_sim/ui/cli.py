@@ -510,6 +510,9 @@ MAIN_MENU = [
 
 def run_cli() -> None:
     """Main CLI entry point."""
+    from ..logging_config import setup_logging
+    setup_logging()
+
     print(_header("DEADLOCK COMBAT SIMULATOR", 40))
     print("  Loading data...")
 

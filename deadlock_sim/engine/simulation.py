@@ -15,8 +15,12 @@ from __future__ import annotations
 
 import enum
 import heapq
+import logging
 import math
+import time
 from dataclasses import dataclass, field
+
+log = logging.getLogger(__name__)
 
 from ..models import Build, BuildStats, HeroAbility, HeroStats, Item
 from .builds import BuildEngine
@@ -729,10 +733,21 @@ class CombatSimulator:
     @classmethod
     def run(cls, config: SimConfig) -> SimResult:
         """Run a full combat simulation and return results."""
+        t0 = time.monotonic()
+        log.info(
+            "Simulation start: %s vs %s (duration=%.1fs, bidirectional=%s)",
+            config.attacker.name,
+            config.defender.name,
+            config.settings.duration,
+            config.settings.bidirectional,
+        )
         sim = cls(config)
         sim._initialize()
         sim._execute()
-        return sim._build_result()
+        result = sim._build_result()
+        elapsed = time.monotonic() - t0
+        log.info("Simulation complete in %.3fs — TTK=%.2fs", elapsed, result.kill_time or result.total_duration)
+        return result
 
     # ── Initialization ────────────────────────────────────────
 
@@ -766,7 +781,7 @@ class CombatSimulator:
         attack = AttackerState(
             ammo_remaining=mag_size,
             weapon_damage=dmg_per_bullet,
-            pellets=hero.pellets,
+            pellets=eff_pellets,
             fire_rate=fire_rate,
             magazine_size=mag_size,
             reload_time=hero.reload_duration if hero.reload_duration > 0 else 1.0,

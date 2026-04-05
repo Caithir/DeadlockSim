@@ -352,6 +352,7 @@ class Item:
     activation: str = ""  # "passive", "press", "toggle", etc.
     tooltip_sections: list = field(default_factory=list)
     upgrades_to: str = ""  # name of the item this upgrades into
+    component_names: list[str] = field(default_factory=list)  # names of items this is built from
 
 
 @dataclass
