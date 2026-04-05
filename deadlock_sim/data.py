@@ -52,6 +52,7 @@ _UPGRADE_PROP_MAP = {
     "BonusWeaponPower": "weapon_damage_pct",
     "BaseAttackDamagePercent": "weapon_damage_pct",
     "BonusFireRate": "fire_rate_pct",
+    # Ammo
     "BonusClipSize": "ammo_flat",
     "BonusClipSizePercent": "ammo_pct",
     # Resist

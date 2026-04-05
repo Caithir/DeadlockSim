@@ -284,6 +284,7 @@ _SORT_OPTIONS = {
     "Bullet Shred %": lambda item: -item.bullet_resist_shred,
     "Spirit Shred %": lambda item: -item.spirit_resist_shred,
     "Cooldown Reduction %": lambda item: -item.cooldown_reduction,
+    "Spirit Amp %": lambda item: -item.spirit_amp_pct,
 }
 
 # Impact sorts — computed per-hero/boon context; mapped to the score dict key
@@ -337,6 +338,39 @@ _UTILITY_ITEMS: list[tuple[str, str]] = [
 
 
 # ── Helpers ───────────────────────────────────────────────────────
+
+
+def _compute_ehp(
+    hero: HeroStats,
+    bs: BuildStats,
+    boons: int = 0,
+) -> float:
+    """Compute effective HP including all shields, resistances, and lifesteal.
+
+    EHP = (raw_hp + shields) / (1 - bullet_resist) blended with spirit resist,
+    plus a sustain bonus from lifesteal.
+    """
+    raw_hp = hero.base_hp + hero.hp_gain * boons + bs.bonus_hp
+    total_shields = bs.bullet_shield + bs.spirit_shield
+    pool = raw_hp + total_shields
+
+    # Effective HP vs bullet damage (reduced by bullet resist)
+    bullet_resist = min(0.9, max(0.0, bs.bullet_resist_pct))
+    ehp_vs_bullet = pool / (1.0 - bullet_resist) if bullet_resist < 1.0 else pool * 10
+
+    # Effective HP vs spirit damage (reduced by spirit resist)
+    spirit_resist = min(0.9, max(0.0, bs.spirit_resist_pct))
+    ehp_vs_spirit = pool / (1.0 - spirit_resist) if spirit_resist < 1.0 else pool * 10
+
+    # Blended EHP (weight bullet slightly more as it's more common)
+    ehp = ehp_vs_bullet * 0.55 + ehp_vs_spirit * 0.45
+
+    # Sustain bonus: lifesteal adds effective survivability
+    # Model as a percentage boost proportional to lifesteal rates
+    sustain_mult = 1.0 + (bs.bullet_lifesteal * 0.5 + bs.spirit_lifesteal * 0.3)
+    ehp *= sustain_mult
+
+    return ehp
 
 
 def _fv(v: float, fmt: str = ".2f", zero_as_na: bool = True) -> str:
@@ -881,7 +915,7 @@ def _render_item_card(
             "sim_ehp_per_soul": ("EHP/1k Souls", "#81c784"),
             "dps_delta": ("Gun DPS", "#4fc3f7"),
             "ehp_delta": ("EHP", "#81c784"),
-            "spirit_delta": ("Spirit Power", "#ce93d8"),
+            "spirit_delta": ("Spirit DPS", "#ce93d8"),
             "dps_per_soul": ("DPS/1k Souls", "#4fc3f7"),
             "ehp_per_soul": ("EHP/1k Souls", "#81c784"),
         }
