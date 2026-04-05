@@ -48,7 +48,6 @@ jobs:
             --name $AZURE_WEBAPP_NAME \
             --settings \
               SCM_DO_BUILD_DURING_DEPLOYMENT=true \
-              WEBSITES_PORT=8080 \
               WEBSITE_HEALTHCHECK_MAXPINGFAILURES=5
 
           az webapp config set \
