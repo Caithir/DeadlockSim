@@ -3524,7 +3524,7 @@ def run_gui() -> None:
         # Load the item shop on startup since Build is the default tab
         _build_refresh_shop()
 
-    ui.run(title="Deadlock Combat Simulator", port=8080, show=False, reconnect_timeout=30.0)
+    ui.run(title="Deadlock Combat Simulator", host="0.0.0.0", port=8080, show=False, reconnect_timeout=30.0)
 
 
 if __name__ in {"__main__", "__mp_main__"}:
