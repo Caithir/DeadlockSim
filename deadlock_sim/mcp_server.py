@@ -6,6 +6,7 @@ Run with:  python -m deadlock_sim.mcp_server
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import asdict
 
 from mcp.server.fastmcp import FastMCP
@@ -16,16 +17,22 @@ from .engine.comparison import ComparisonEngine
 from .engine.damage import DamageCalculator
 from .engine.scaling import ScalingCalculator
 from .engine.ttk import TTKCalculator
+from .logging_config import setup_logging
 from .models import Build, CombatConfig
 
 # ---------------------------------------------------------------------------
 # Bootstrap
 # ---------------------------------------------------------------------------
 
+setup_logging()
+log = logging.getLogger(__name__)
+
 mcp = FastMCP("Deadlock Simulator")
 
+log.info("MCP server starting — loading data")
 _heroes = load_heroes()
 _items = load_items()
+log.info("MCP server ready: %d heroes, %d items", len(_heroes), len(_items))
 
 
 def _hero_names() -> list[str]:
