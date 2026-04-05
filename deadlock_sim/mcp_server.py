@@ -380,11 +380,12 @@ def evaluate_build(
         defender=defender,
     )
 
-    # Also compute spirit DPS
+    # Also compute spirit DPS (include boon-derived spirit)
     build_stats = BuildEngine.aggregate_stats(build)
+    cfg = BuildEngine.build_to_attacker_config(build_stats, boons=boons, spirit_gain=hero.spirit_gain)
     spirit_dps = DamageCalculator.hero_total_spirit_dps(
         hero,
-        current_spirit=int(build_stats.spirit_power),
+        current_spirit=cfg.current_spirit,
         cooldown_reduction=build_stats.cooldown_reduction,
         spirit_amp=build_stats.spirit_amp_pct,
     )
@@ -438,9 +439,10 @@ def optimize_build(
     result = BuildEngine.evaluate_build(hero, build, boons=boons)
     bullet_dps = result.bullet_result.final_dps if result.bullet_result else 0.0
     build_stats = BuildEngine.aggregate_stats(build)
+    cfg = BuildEngine.build_to_attacker_config(build_stats, boons=boons, spirit_gain=hero.spirit_gain)
     spirit_dps = DamageCalculator.hero_total_spirit_dps(
         hero,
-        current_spirit=int(build_stats.spirit_power),
+        current_spirit=cfg.current_spirit,
         cooldown_reduction=build_stats.cooldown_reduction,
         spirit_amp=build_stats.spirit_amp_pct,
     )

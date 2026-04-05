@@ -1,0 +1,36 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "appName": {
+      "value": "deadlocksim"
+    },
+    "location": {
+      "value": "westus3"
+    },
+    "skuName": {
+      "value": "P0v3"
+    },
+    "pythonVersion": {
+      "value": "3.14"
+    },
+    "existingAppServicePlanId": {
+      "value": "/subscriptions/cc05efe5-7259-4c47-af9f-904b5a42fc8a/resourceGroups/deadlocksim-rg/providers/Microsoft.Web/serverfarms/ASP-deadlocksimrg-8ec5"
+    },
+    "vnetAddressPrefix": {
+      "value": "10.0.0.0/16"
+    },
+    "appSubnetPrefix": {
+      "value": "10.0.1.0/24"
+    },
+    "privateEndpointSubnetPrefix": {
+      "value": "10.0.2.0/24"
+    },
+    "enablePrivateEndpoint": {
+      "value": false
+    },
+    "logRetentionDays": {
+      "value": 30
+    }
+  }
+}

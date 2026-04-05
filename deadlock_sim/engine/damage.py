@@ -8,6 +8,9 @@ from __future__ import annotations
 
 import math
 
+from .primitives import extract_item_damage as _extract_item_damage_impl
+from .primitives import falloff_multiplier
+from .primitives import resist_after_shred
 from ..models import (
     AbilityConfig,
     AbilityDamageResult,
@@ -21,9 +24,97 @@ from ..models import (
     SpiritResult,
 )
 
+# Property names from upgrade data that add flat damage
+_DAMAGE_UPGRADE_KEYS = {
+    "Damage", "AbilityDamage", "ExplodeDamage", "StompDamage",
+    "TechDamage", "BulletDamage", "BonusDamage", "DamagePerProjectile",
+    "DamagePerRocket", "ImpactDamage", "ProcDamage", "PulseDamage",
+    "ExplosionDamage", "FullChargeDamage", "BaseDamage", "PerfectDamage",
+    "BarrelDamage", "BuffDamage", "CartDamage", "LateCheckoutDamage",
+    "PetrifyDamage", "DamageHeavyMelee", "HeavyMeleeDamage", "MeleeDamage",
+    "MaxDamage", "MagicDamagePerBullet", "BonusDamagePerBullet",
+    "DamageBonus",
+}
+
+# Property names from upgrade data that represent DPS values
+_DPS_UPGRADE_KEYS = {"DPS", "DamagePerSecond", "PulseDPS", "TurretDPS", "MinDps", "MaxDPS"}
+
+
+def apply_ability_upgrades(
+    ability: HeroAbility,
+    active_tiers: list[int],
+) -> tuple[float, float, float, float]:
+    """Return (base_damage, cooldown, duration, spirit_scaling) after applying upgrade bonuses.
+
+    Only tiers present in *active_tiers* are applied.
+
+    For DPS abilities (``ability.is_dps``), when duration changes the total
+    damage and spirit scaling are rescaled proportionally (same per-second
+    rate over the new duration).  ``EAddToScale`` upgrades modify
+    ``spirit_scaling`` rather than adding flat damage.
+    """
+    base_damage = ability.base_damage
+    cooldown = ability.cooldown
+    duration = ability.duration
+    spirit_scaling = ability.spirit_scaling
+
+    for tier in sorted(active_tiers):
+        upgrade = next((u for u in ability.upgrades if u.tier == tier), None)
+        if not upgrade:
+            continue
+        for pu in upgrade.property_upgrades:
+            name = pu.get("name", "")
+            raw = pu.get("bonus", 0)
+            try:
+                bonus = float(raw)
+            except (ValueError, TypeError):
+                continue
+
+            upgrade_type = pu.get("upgrade_type", "")
+
+            # EAddToScale on DPS keys → spirit scaling modification
+            if upgrade_type == "EAddToScale" and name in _DPS_UPGRADE_KEYS:
+                if ability.is_dps and duration > 0:
+                    spirit_scaling += bonus * duration
+                else:
+                    spirit_scaling += bonus
+                continue
+
+            if name in _DAMAGE_UPGRADE_KEYS:
+                base_damage += bonus
+            elif name in _DPS_UPGRADE_KEYS:
+                if duration > 0:
+                    base_damage += bonus * duration
+                else:
+                    base_damage += bonus
+            elif name == "AbilityCooldown":
+                cooldown += bonus  # bonus is negative (e.g. -12)
+            elif name in ("AbilityDuration", "AbilityChannelTime"):
+                old_duration = duration
+                duration += bonus
+                # For DPS abilities, rescale total damage and spirit scaling
+                # when duration changes (same DPS rate over longer/shorter time)
+                if ability.is_dps and old_duration > 0 and duration > 0:
+                    scale = duration / old_duration
+                    base_damage *= scale
+                    spirit_scaling *= scale
+
+    return max(0.0, base_damage), max(0.1, cooldown), max(0.0, duration), spirit_scaling
+
 
 class DamageCalculator:
     """Stateless calculator for Deadlock damage mechanics."""
+
+    @staticmethod
+    def effective_pellets(hero: HeroStats) -> int:
+        """Return the number of pellets that hit a single target per shot.
+
+        Most heroes land all pellets on one target. Drifter spreads
+        pellets across targets (max 1 per target).
+        """
+        if hero.max_pellets_per_target > 0:
+            return min(hero.pellets, hero.max_pellets_per_target)
+        return hero.pellets
 
     @staticmethod
     def bullet_damage_at_boon(hero: HeroStats, boons: int) -> float:
@@ -49,7 +140,7 @@ class DamageCalculator:
         """
         if hero.base_ammo <= 0:
             return 0
-        return max(1, math.floor(hero.base_ammo * (1.0 + ammo_increase)) + ammo_flat)
+        return max(1, math.ceil(hero.base_ammo * (1.0 + ammo_increase)) + ammo_flat)
 
     @staticmethod
     def total_shred(shred_sources: list[float]) -> float:
@@ -63,10 +154,9 @@ class DamageCalculator:
     def final_resist(base_resist: float, total_shred: float) -> float:
         """Calculate effective resist after shred is applied.
 
-        resist_after_shred = base_resist * (1 - total_shred)
-        Clamped to [0, 1].
+        Delegates to primitives.resist_after_shred.
         """
-        return max(0.0, min(1.0, base_resist * (1.0 - total_shred)))
+        return resist_after_shred(base_resist, total_shred)
 
     @classmethod
     def calculate_bullet(
@@ -81,11 +171,37 @@ class DamageCalculator:
         2. Bullets per second = fire_rate * (1 + fire_rate_bonus)
         3. Raw DPS = damage_per_bullet * bullets_per_second
         4. Shred reduces enemy resist
-        5. Final DPS = Raw DPS * (1 - final_resist)
+        5. Falloff reduces damage at range
+        6. Bullet damage amp from target debuffs
+        7. Final DPS = Raw DPS * falloff * (1 + bullet_amp) * (1 - final_resist)
         """
-        # Per-bullet damage
+        # Effective weapon damage bonus including golden statues and conditionals
+        weapon_bonus = config.weapon_damage_bonus
+
+        # Golden statue weapon bonus
+        if config.golden_weapon_total > 0:
+            weapon_bonus += config.golden_weapon_total
+        elif config.golden_buffs_count > 0:
+            weapon_bonus += config.golden_buffs_count / 3.0 * 0.05  # ~5% per buff, split 3 ways
+
+        # Conditional item bonuses
+        if config.berserker_stacks > 0:
+            weapon_bonus += config.berserker_stacks * 0.07
+        if config.intensifying_mag_pct > 0:
+            weapon_bonus += config.intensifying_mag_pct
+        if config.opening_rounds_active:
+            weapon_bonus += 0.45
+        if config.close_range_active:
+            weapon_bonus += 0.50  # Point Blank (strongest close-range item)
+        if config.long_range_active:
+            weapon_bonus += 0.70  # Sharpshooter (strongest long-range item)
+
+        # Per-bullet damage: base scaled by weapon %, then add flat bonus
         scaled_dmg = cls.bullet_damage_at_boon(hero, config.boons)
-        dmg_per_bullet = scaled_dmg * hero.pellets * (1.0 + config.weapon_damage_bonus)
+        eff_pellets = cls.effective_pellets(hero)
+        dmg_per_bullet = (
+            scaled_dmg * (1.0 + weapon_bonus) + config.flat_weapon_bonus
+        ) * eff_pellets
 
         # Fire rate
         bps = cls.fire_rate_with_bonus(hero, config.fire_rate_bonus)
@@ -102,14 +218,22 @@ class DamageCalculator:
         t_shred = cls.total_shred(config.shred)
         f_resist = cls.final_resist(config.enemy_bullet_resist, t_shred)
 
+        # Distance falloff
+        falloff = falloff_multiplier(
+            config.distance, hero.falloff_range_min, hero.falloff_range_max,
+        )
+
+        # Bullet damage amp from target debuffs
+        bullet_amp = 1.0 + config.target_bullet_damage_amp
+
         # Final DPS after resist (burst — ignores reload)
-        final_dps = raw_dps * (1.0 - f_resist)
+        final_dps = raw_dps * falloff * bullet_amp * (1.0 - f_resist)
 
         # Sustained DPS including reload downtime
         reload_time = hero.reload_duration if hero.reload_duration > 0 else 0.0
         cycle_time = magdump_time + reload_time
         if cycle_time > 0 and mag_size > 0:
-            final_dmg_per_mag = dmg_per_mag * (1.0 - f_resist)
+            final_dmg_per_mag = dmg_per_mag * falloff * bullet_amp * (1.0 - f_resist)
             sustained_dps = final_dmg_per_mag / cycle_time
         else:
             sustained_dps = final_dps
@@ -208,23 +332,35 @@ class DamageCalculator:
         spirit_amp: float = 0.0,
         enemy_spirit_resist: float = 0.0,
         resist_shred: float = 0.0,
+        upgrade_tiers: list[int] | None = None,
     ) -> SpiritResult:
         """Calculate spirit DPS for a specific hero ability.
 
         Uses the ability's base damage, spirit scaling, cooldown, and duration
         to compute DPS including spirit power contributions.
+        If *upgrade_tiers* is provided, the listed tiers are applied first.
         """
+        base_damage = ability.base_damage
+        cooldown = ability.cooldown
+        duration = ability.duration
+        spirit_multiplier = ability.spirit_scaling
+
+        if upgrade_tiers:
+            base_damage, cooldown, duration, spirit_multiplier = apply_ability_upgrades(
+                ability, upgrade_tiers
+            )
+
         # Effective cooldown with CDR
-        effective_cooldown = ability.cooldown * (1.0 - cooldown_reduction)
+        effective_cooldown = cooldown * (1.0 - cooldown_reduction)
         if effective_cooldown < 0.1:
             effective_cooldown = 0.1
 
         config = AbilityConfig(
-            base_damage=ability.base_damage,
-            spirit_multiplier=ability.spirit_scaling,
+            base_damage=base_damage,
+            spirit_multiplier=spirit_multiplier,
             current_spirit=current_spirit,
             cooldown=effective_cooldown,
-            ability_duration=ability.duration,
+            ability_duration=duration,
             enemy_spirit_resist=enemy_spirit_resist,
             resist_shred=resist_shred,
             spirit_amp=spirit_amp,
@@ -233,7 +369,7 @@ class DamageCalculator:
 
         # If the ability has a cooldown and is instant (no DoT duration),
         # DPS = damage / cooldown
-        if ability.cooldown > 0 and ability.duration == 0:
+        if cooldown > 0 and duration == 0:
             cd_dps = result.modified_damage / effective_cooldown
             return SpiritResult(
                 raw_damage=result.raw_damage,
@@ -254,32 +390,80 @@ class DamageCalculator:
         spirit_amp: float = 0.0,
         enemy_spirit_resist: float = 0.0,
         resist_shred: float = 0.0,
+        ability_upgrades: dict[int, list[int]] | None = None,
+        boons: int = 0,
+        weapon_damage_bonus: float = 0.0,
+        melee_damage_pct: float = 0.0,
     ) -> float:
         """Calculate total spirit DPS from all of a hero's damaging abilities.
 
-        Sums the DPS contributions of all abilities that deal damage,
-        accounting for cooldowns, spirit scaling, and resist.
+        *ability_upgrades* maps ability index → list of active tier numbers
+        (e.g. ``{0: [1, 2], 2: [1]}``).  Tiers modify base damage / cooldown.
+
+        For melee-scaled abilities (melee_scale > 0), the base damage is derived
+        from the hero's light melee damage instead of spirit damage.
         """
         total_dps = 0.0
-        for ability in hero.abilities:
-            if ability.base_damage <= 0:
+        for i, ability in enumerate(hero.abilities):
+            if ability.base_damage <= 0 and ability.melee_scale <= 0:
                 continue
-            result = cls.calculate_ability_spirit_dps(
-                ability,
-                current_spirit=current_spirit,
-                cooldown_reduction=cooldown_reduction,
-                spirit_amp=spirit_amp,
-                enemy_spirit_resist=enemy_spirit_resist,
-                resist_shred=resist_shred,
-            )
-            total_dps += result.dps
+            tiers = (ability_upgrades or {}).get(i)
+
+            # For melee-scaled abilities, compute melee-based damage
+            if ability.melee_scale > 0:
+                melee_boon = hero.damage_gain * boons
+                melee_weapon = weapon_damage_bonus * cls.MELEE_WEAPON_SCALE
+                light_melee_dmg = (hero.light_melee_damage + melee_boon) * (1.0 + melee_weapon + melee_damage_pct)
+                melee_base = light_melee_dmg * ability.melee_scale
+
+                cooldown = ability.cooldown
+                duration = ability.duration
+                spirit_multiplier = ability.spirit_scaling
+                base_damage = ability.base_damage + melee_base
+                if tiers:
+                    base_damage_upg, cooldown, duration, spirit_multiplier = apply_ability_upgrades(ability, tiers)
+                    base_damage = base_damage_upg + melee_base
+
+                effective_cooldown = cooldown * (1.0 - cooldown_reduction)
+                if effective_cooldown < 0.1:
+                    effective_cooldown = 0.1
+
+                config = AbilityConfig(
+                    base_damage=base_damage,
+                    spirit_multiplier=spirit_multiplier,
+                    current_spirit=current_spirit,
+                    cooldown=effective_cooldown,
+                    ability_duration=duration,
+                    enemy_spirit_resist=enemy_spirit_resist,
+                    resist_shred=resist_shred,
+                    spirit_amp=spirit_amp,
+                )
+                result = cls.calculate_spirit(config)
+                if cooldown > 0 and duration == 0:
+                    total_dps += result.modified_damage / effective_cooldown
+                else:
+                    total_dps += result.dps
+            else:
+                result = cls.calculate_ability_spirit_dps(
+                    ability,
+                    current_spirit=current_spirit,
+                    cooldown_reduction=cooldown_reduction,
+                    spirit_amp=spirit_amp,
+                    enemy_spirit_resist=enemy_spirit_resist,
+                    resist_shred=resist_shred,
+                    upgrade_tiers=tiers,
+                )
+                total_dps += result.dps
         return total_dps
 
     # ── Melee damage ──────────────────────────────────────────────
 
     # Melee cycle times (seconds per swing) — game constants
     LIGHT_MELEE_CYCLE: float = 0.6
-    HEAVY_MELEE_CYCLE: float = 1.1
+    HEAVY_MELEE_CYCLE: float = 1.0
+
+    # Weapon damage scales melee at 50% (wiki-documented rate)
+    MELEE_WEAPON_SCALE: float = 0.5
 
     @classmethod
     def calculate_melee(
@@ -289,11 +473,15 @@ class DamageCalculator:
         weapon_damage_bonus: float = 0.0,
         enemy_bullet_resist: float = 0.0,
         shred_sources: list[float] | None = None,
+        melee_damage_pct: float = 0.0,
+        heavy_melee_damage_pct: float = 0.0,
     ) -> MeleeResult:
         """Calculate melee damage.
 
         Melee damage scales with weapon damage bonus (same as gun damage).
         Both light and heavy melee inherit the weapon damage multiplier.
+        Bonus melee damage % from items applies additively on top.
+        Heavy melee also gets heavy_melee_damage_pct.
         Melee damage is reduced by bullet resist.
         """
         # Melee base values scale with boons via the same damage_gain as bullets
@@ -302,9 +490,10 @@ class DamageCalculator:
         light_base = hero.light_melee_damage + melee_boon_scaling
         heavy_base = hero.heavy_melee_damage + melee_boon_scaling
 
-        # Weapon damage bonus applies to melee
-        light_dmg = light_base * (1.0 + weapon_damage_bonus)
-        heavy_dmg = heavy_base * (1.0 + weapon_damage_bonus)
+        # Weapon damage bonus applies to melee at 50% rate (wiki-documented)
+        melee_weapon_bonus = weapon_damage_bonus * cls.MELEE_WEAPON_SCALE
+        light_dmg = light_base * (1.0 + melee_weapon_bonus + melee_damage_pct)
+        heavy_dmg = heavy_base * (1.0 + melee_weapon_bonus + melee_damage_pct + heavy_melee_damage_pct)
 
         # Apply resist (melee uses bullet resist)
         t_shred = cls.total_shred(shred_sources or [])
@@ -429,76 +618,9 @@ class DamageCalculator:
     ) -> tuple[float, str, float, bool, float, float] | None:
         """Extract damage info from item raw_properties.
 
-        Returns (base_damage, scale_type, stat_scale, is_dps, proc_cooldown, proc_chance)
-        or None if the item has no damage properties.
+        Delegates to primitives.extract_item_damage.
         """
-        # Property keys that indicate damage output (ordered by priority)
-        _DAMAGE_KEYS = [
-            "DPS",  # already expressed as DPS
-            "DPSMax",
-            "ProcBonusMagicDamage",
-            "DamagePerChain",
-            "AbilityDamage",
-            "TechDamage",
-            "DotHealthPercent",
-            "BulletDamage",
-            "HeadShotBonusDamage",
-            "BonusDamage",
-            "Damage",
-        ]
-
-        base_damage = 0.0
-        scale_type = ""
-        stat_scale = 0.0
-        is_dps = False
-        damage_key_found = ""
-
-        for key in _DAMAGE_KEYS:
-            prop = props.get(key)
-            if not isinstance(prop, dict):
-                continue
-            val = prop.get("value")
-            if val is None:
-                continue
-            try:
-                base_damage = float(val)
-            except (ValueError, TypeError):
-                continue
-
-            damage_key_found = key
-            is_dps = key in ("DPS", "DPSMax", "DotHealthPercent")
-
-            scale_fn = prop.get("scale_function")
-            if isinstance(scale_fn, dict):
-                scale_type = scale_fn.get("specific_stat_scale_type", "")
-                try:
-                    stat_scale = float(scale_fn.get("stat_scale", 0.0))
-                except (ValueError, TypeError):
-                    stat_scale = 0.0
-            break
-
-        if not damage_key_found:
-            return None
-
-        # Extract proc timing
-        proc_cooldown = 0.0
-        proc_chance = 100.0
-
-        cd_prop = props.get("ProcCooldown") or props.get("AbilityCooldown")
-        if isinstance(cd_prop, dict):
-            try:
-                proc_cooldown = float(cd_prop.get("value", 0))
-            except (ValueError, TypeError):
-                pass
-
-        chance_prop = props.get("ProcChance")
-        if isinstance(chance_prop, dict):
-            try:
-                proc_chance = float(chance_prop.get("value", 100))
-            except (ValueError, TypeError):
-                proc_chance = 100.0
-
-        return (base_damage, scale_type, stat_scale, is_dps, proc_cooldown, proc_chance)
+        return _extract_item_damage_impl(props)
 
     # ── Ability damage with boon context ──────────────────────────
 

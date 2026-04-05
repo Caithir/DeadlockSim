@@ -4,6 +4,9 @@ Simulates a full combat encounter tick-by-tick using a priority queue.
 Models weapon firing, item procs, DoTs, buildup mechanics, ability usage,
 melee weaving, and cross-item interactions (EE stacks, Mystic Vuln, etc.).
 
+Supports both unidirectional (attacker vs. passive target) and bidirectional
+(both combatants attack each other simultaneously) combat modes.
+
 All calculations are pure — no UI, no I/O, no side effects.
 Leverages DamageCalculator for base damage math.
 """
@@ -17,7 +20,8 @@ from dataclasses import dataclass, field
 
 from ..models import Build, BuildStats, HeroAbility, HeroStats, Item
 from .builds import BuildEngine
-from .damage import DamageCalculator
+from .damage import DamageCalculator, apply_ability_upgrades
+from .primitives import extract_item_damage, falloff_multiplier, resist_after_shred
 
 
 # ── Enums ─────────────────────────────────────────────────────────
@@ -131,13 +135,37 @@ class SimSettings:
     ability_uptime: float = 1.0  # multiplier on ability usage frequency
     active_item_uptime: float = 1.0  # multiplier on active item usage
 
+    # Engagement range
+    distance: float = 20.0  # meters; used for damage falloff
+
     # Melee
     weave_melee: bool = False  # weave light melee between reloads
     melee_after_reload: bool = True  # heavy melee during reload window
+    reload_cancel_melee: bool = False  # melee interrupts reload (extends reload time)
 
     # Boons
     attacker_boons: int = 0
     defender_boons: int = 0
+
+    # Buildup items
+    # Default time (seconds of continuous fire, 100% accuracy) to proc each
+    # buildup item.  Used to derive buildup_per_shot from the hero's fire rate.
+    # Keys are item names; items not listed keep their API buildup_per_shot.
+    buildup_time_defaults: dict[str, float] = field(default_factory=lambda: {
+        "Toxic Bullets": 1.5,
+        "Slowing Bullets": 1.0,
+        "Weighted Shots": 1.0,
+        "Silencer": 1.0,
+        "Spiritual Overflow": 1.0,
+        "Inhibitor": 1.0,
+        "Glass Cannon": 1.0,
+    })
+    # Per-item buildup_per_shot overrides (% per bullet).  When set, takes
+    # precedence over both the API value and buildup_time_defaults.
+    buildup_overrides: dict[str, float] = field(default_factory=dict)
+
+    # Bidirectional combat
+    bidirectional: bool = False  # defender also attacks when True
 
 
 @dataclass
@@ -156,6 +184,14 @@ class SimConfig:
     # Schedules for active items and abilities (auto-populated if empty)
     active_schedule: list[ActiveUse] = field(default_factory=list)
     ability_schedule: list[AbilityUse] = field(default_factory=list)
+
+    # Ability upgrades: maps ability index → list of active tier numbers
+    attacker_ability_upgrades: dict[int, list[int]] = field(default_factory=dict)
+    defender_ability_upgrades: dict[int, list[int]] = field(default_factory=dict)
+
+    # Defender schedules (only used when bidirectional=True)
+    defender_active_schedule: list[ActiveUse] = field(default_factory=list)
+    defender_ability_schedule: list[AbilityUse] = field(default_factory=list)
 
 
 # ── Item behavior classification ──────────────────────────────────
@@ -367,7 +403,7 @@ def classify_item(item: Item) -> ItemBehavior | None:
 
     # 5. Proc-on-hit items (Tesla Bullets, Mystic Shot, Siphon Bullets)
     if "ProcCooldown" in props:
-        damage_info = DamageCalculator._extract_item_damage(props)
+        damage_info = extract_item_damage(props)
         if damage_info:
             base_dmg, scale_type, stat_scale, is_dps, _, proc_chance = damage_info
             return ItemBehavior(
@@ -415,12 +451,14 @@ def classify_build(build: Build) -> list[ItemBehavior]:
 class SimEvent:
     """A single event in the simulation priority queue.
 
-    Sorted by (time, priority) so ties resolve deterministically.
+    Sorted by (time, priority, combatant) so ties resolve deterministically.
     Lower priority number fires first at the same timestamp.
+    Combatant "a" processes before "b" at the same (time, priority).
     """
 
     time: float
     priority: int = 0
+    combatant: str = field(default="a")  # "a" or "b"
     event_type: EventType = field(compare=False, default=EventType.BULLET_FIRE)
     source: str = field(compare=False, default="")
     metadata: dict = field(compare=False, default_factory=dict)
@@ -431,9 +469,9 @@ class SimEvent:
 
 @dataclass
 class TargetState:
-    """Mutable state of the defender during the simulation.
+    """Mutable defensive state of a combatant.
 
-    Tracks HP, shields, regen, and active debuffs applied by the attacker.
+    Tracks HP, shields, regen, and active debuffs applied by the opponent.
     Debuffs are tracked by mechanic type (not by item name) so any item
     contributing to e.g. spirit_resist_shred feeds the same pool.
     """
@@ -466,12 +504,12 @@ class TargetState:
     def effective_bullet_resist(self, time: float) -> float:
         """Current bullet resist after all bullet resist shred debuffs."""
         shred = min(1.0, self.total_for(DebuffType.BULLET_RESIST_SHRED, time))
-        return max(0.0, min(1.0, self.base_bullet_resist * (1.0 - shred)))
+        return resist_after_shred(self.base_bullet_resist, shred)
 
     def effective_spirit_resist(self, time: float) -> float:
         """Current spirit resist after all spirit resist shred debuffs."""
         shred = min(1.0, self.total_for(DebuffType.SPIRIT_RESIST_SHRED, time))
-        return max(0.0, min(1.0, self.base_spirit_resist * (1.0 - shred)))
+        return resist_after_shred(self.base_spirit_resist, shred)
 
     def effective_spirit_amp(self, time: float) -> float:
         """Spirit damage amp from all amp stacks on target (EE, etc.)."""
@@ -524,10 +562,10 @@ class TargetState:
 
 @dataclass
 class AttackerState:
-    """Mutable state of the attacker during the simulation.
+    """Mutable offensive state of a combatant.
 
     Tracks ammo, cooldowns, buildup meters, and derived combat stats.
-    Initialized from attacker HeroStats + attacker Build + boons.
+    Initialized from HeroStats + Build + boons.
     """
 
     # Weapon
@@ -549,6 +587,14 @@ class AttackerState:
 
     # Cooldown reduction
     cooldown_reduction: float = 0.0
+    item_cooldown_reduction: float = 0.0
+
+    # Distance falloff multiplier (precomputed from hero range + engagement distance)
+    falloff: float = 1.0
+
+    # Lifesteal
+    bullet_lifesteal: float = 0.0
+    spirit_lifesteal: float = 0.0
 
     # Buildup trackers: item_name -> (current_buildup, last_shot_time)
     buildup_trackers: dict[str, tuple[float, float]] = field(default_factory=dict)
@@ -563,6 +609,30 @@ class AttackerState:
     ability_cooldowns: dict[int, float] = field(default_factory=dict)
 
 
+@dataclass
+class CombatantState:
+    """Full state of a combatant: offensive + defensive."""
+
+    attack: AttackerState = field(default_factory=AttackerState)
+    defense: TargetState = field(default_factory=TargetState)
+    hero: HeroStats = field(default_factory=lambda: HeroStats(name="Unknown"))
+    boons: int = 0
+
+    # Per-combatant behavior lists (classified from build items)
+    behaviors: list[ItemBehavior] = field(default_factory=list)
+    proc_items: list[ItemBehavior] = field(default_factory=list)
+    buildup_items: list[ItemBehavior] = field(default_factory=list)
+    stack_amplifiers: list[ItemBehavior] = field(default_factory=list)
+    debuff_items: list[ItemBehavior] = field(default_factory=list)
+    pulse_items: list[ItemBehavior] = field(default_factory=list)
+
+    # Per-combatant counters
+    bullets_fired: int = 0
+    headshots: int = 0
+    reloads: int = 0
+    procs: dict[str, int] = field(default_factory=dict)
+
+
 # ── Simulation output ─────────────────────────────────────────────
 
 
@@ -574,6 +644,7 @@ class DamageEntry:
     source: str  # "weapon", item name, ability name, "light_melee", "heavy_melee"
     damage: float  # after resist/amp
     damage_type: str  # "bullet", "spirit", "melee"
+    combatant: str = "a"  # which combatant dealt this damage
     is_headshot: bool = False
 
 
@@ -584,7 +655,7 @@ class SimResult:
     # Timeline
     timeline: list[DamageEntry] = field(default_factory=list)
 
-    # Totals
+    # Totals (attacker / combatant A perspective)
     total_damage: float = 0.0
     total_duration: float = 0.0
     overall_dps: float = 0.0
@@ -608,6 +679,22 @@ class SimResult:
     kill_time: float | None = None  # None if target survived
     target_hp_remaining: float = 0.0
 
+    # ── Bidirectional fields (None when unidirectional) ────────
+    defender_total_damage: float | None = None
+    defender_dps: float | None = None
+    defender_damage_by_source: dict[str, float] | None = None
+    defender_dps_by_source: dict[str, float] | None = None
+    defender_bullet_damage: float | None = None
+    defender_spirit_damage: float | None = None
+    defender_melee_damage: float | None = None
+    defender_bullets_fired: int | None = None
+    defender_headshots: int | None = None
+    defender_reloads: int | None = None
+    defender_procs_triggered: dict[str, int] | None = None
+    defender_kill_time: float | None = None
+    attacker_hp_remaining: float | None = None
+    winner: str | None = None  # "a", "b", or None (draw / nobody died)
+
 
 # ── Combat simulator ──────────────────────────────────────────────
 
@@ -618,6 +705,8 @@ class CombatSimulator:
     Processes a priority queue of SimEvents to model a full combat
     encounter with weapon firing, item procs, DoTs, cross-interactions,
     abilities, and melee.
+
+    Supports bidirectional mode where both combatants attack each other.
     """
 
     def __init__(self, config: SimConfig) -> None:
@@ -625,21 +714,15 @@ class CombatSimulator:
         self.settings = config.settings
         self.queue: list[SimEvent] = []
         self.timeline: list[DamageEntry] = []
-        self.attacker = AttackerState()
-        self.target = TargetState()
-        self.behaviors: list[ItemBehavior] = []
-        self._dead = False
-        self._bullets_fired = 0
-        self._headshots = 0
-        self._reloads = 0
-        self._procs: dict[str, int] = {}
 
-        # Behavior sub-lists for fast lookup
-        self._proc_items: list[ItemBehavior] = []
-        self._buildup_items: list[ItemBehavior] = []
-        self._stack_amplifiers: list[ItemBehavior] = []  # EE-style
-        self._debuff_items: list[ItemBehavior] = []  # all items with on_hit_debuffs
-        self._pulse_items: list[ItemBehavior] = []
+        # Two combatant states (always created; B only seeds events if bidirectional)
+        self.a = CombatantState()
+        self.b = CombatantState()
+
+        # Initial effective HP (HP + shields), captured after _initialize
+        # so _find_kill_time uses the pre-combat values (shields deplete during sim).
+        self._a_effective_hp: float = 0.0
+        self._b_effective_hp: float = 0.0
 
     # ── Public API ────────────────────────────────────────────
 
@@ -653,33 +736,34 @@ class CombatSimulator:
 
     # ── Initialization ────────────────────────────────────────
 
-    def _initialize(self) -> None:
-        """Set up attacker/target state, classify items, seed events."""
+    def _build_combatant(
+        self, hero: HeroStats, build: Build, boons: int,
+    ) -> CombatantState:
+        """Build a full CombatantState from hero + build + boons."""
         s = self.settings
-        hero = self.config.attacker
+        stats = BuildEngine.aggregate_stats(build)
 
-        # Aggregate attacker build stats
-        atk_stats = BuildEngine.aggregate_stats(self.config.attacker_build)
-
-        # Attacker weapon stats
-        boon_dmg = DamageCalculator.bullet_damage_at_boon(hero, s.attacker_boons)
-        weapon_bonus = atk_stats.weapon_damage_pct
-        dmg_per_bullet = boon_dmg * hero.pellets * (1.0 + weapon_bonus)
-        fire_rate = DamageCalculator.fire_rate_with_bonus(hero, atk_stats.fire_rate_pct)
+        # Offensive state
+        boon_dmg = DamageCalculator.bullet_damage_at_boon(hero, boons)
+        weapon_bonus = stats.weapon_damage_pct
+        eff_pellets = DamageCalculator.effective_pellets(hero)
+        dmg_per_bullet = boon_dmg * eff_pellets * (1.0 + weapon_bonus)
+        fire_rate = DamageCalculator.fire_rate_with_bonus(hero, stats.fire_rate_pct)
         mag_size = DamageCalculator.effective_magazine(
-            hero, atk_stats.ammo_pct, atk_stats.ammo_flat
+            hero, stats.ammo_pct, stats.ammo_flat
         )
 
-        # Spirit power from boons + items
-        spirit_from_boons = hero.spirit_gain * s.attacker_boons
-        spirit_power = spirit_from_boons + atk_stats.spirit_power
+        spirit_from_boons = hero.spirit_gain * boons
+        spirit_power = (spirit_from_boons + stats.spirit_power) * (1.0 + stats.spirit_power_pct)
 
-        # Melee damage (scales with weapon bonus + boons)
-        melee_boon = hero.damage_gain * s.attacker_boons
-        light_melee = (hero.light_melee_damage + melee_boon) * (1.0 + weapon_bonus)
-        heavy_melee = (hero.heavy_melee_damage + melee_boon) * (1.0 + weapon_bonus)
+        melee_boon = hero.damage_gain * boons
+        melee_weapon_bonus = weapon_bonus * DamageCalculator.MELEE_WEAPON_SCALE
+        melee_dmg_pct = stats.melee_damage_pct
+        heavy_melee_dmg_pct = stats.heavy_melee_damage_pct
+        light_melee = (hero.light_melee_damage + melee_boon) * (1.0 + melee_weapon_bonus + melee_dmg_pct)
+        heavy_melee = (hero.heavy_melee_damage + melee_boon) * (1.0 + melee_weapon_bonus + melee_dmg_pct + heavy_melee_dmg_pct)
 
-        self.attacker = AttackerState(
+        attack = AttackerState(
             ammo_remaining=mag_size,
             weapon_damage=dmg_per_bullet,
             pellets=hero.pellets,
@@ -689,79 +773,125 @@ class CombatSimulator:
             light_melee_damage=light_melee,
             heavy_melee_damage=heavy_melee,
             spirit_power=spirit_power,
-            spirit_amp=atk_stats.spirit_amp_pct,
+            spirit_amp=stats.spirit_amp_pct,
             weapon_damage_bonus=weapon_bonus,
-            cooldown_reduction=atk_stats.cooldown_reduction,
+            cooldown_reduction=stats.cooldown_reduction,
+            item_cooldown_reduction=stats.item_cooldown_reduction,
+            falloff=falloff_multiplier(
+                s.distance, hero.falloff_range_min, hero.falloff_range_max,
+            ),
+            bullet_lifesteal=stats.bullet_lifesteal,
+            spirit_lifesteal=stats.spirit_lifesteal,
         )
 
-        # Defender state from hero + build
-        def_hero = self.config.defender
-        def_stats = BuildEngine.aggregate_stats(self.config.defender_build)
-        def_base_hp = def_hero.base_hp + (def_hero.hp_gain * s.defender_boons)
-        def_hp = def_base_hp + def_stats.bonus_hp
+        # Defensive state
+        base_hp = (hero.base_hp + (hero.hp_gain * boons)) * (1.0 + stats.base_hp_pct)
+        total_hp = base_hp + stats.bonus_hp
 
-        self.target = TargetState(
-            hp=def_hp,
-            max_hp=def_hp,
-            bullet_shield=def_stats.bullet_shield,
-            spirit_shield=def_stats.spirit_shield,
-            hp_regen=def_hero.base_regen + def_stats.hp_regen,
-            base_bullet_resist=def_stats.bullet_resist_pct,
-            base_spirit_resist=def_stats.spirit_resist_pct,
+        defense = TargetState(
+            hp=total_hp,
+            max_hp=total_hp,
+            bullet_shield=stats.bullet_shield,
+            spirit_shield=stats.spirit_shield,
+            hp_regen=hero.base_regen + stats.hp_regen,
+            base_bullet_resist=stats.bullet_resist_pct,
+            base_spirit_resist=stats.spirit_resist_pct,
         )
 
-        # Classify attacker items into behaviors
-        self.behaviors = classify_build(self.config.attacker_build)
-        for b in self.behaviors:
+        # Classify items
+        behaviors = classify_build(build)
+        proc_items = []
+        buildup_items = []
+        stack_amplifiers = []
+        debuff_items = []
+        pulse_items = []
+        for b in behaviors:
             if b.behavior_type == ItemBehaviorType.PROC_ON_HIT:
-                self._proc_items.append(b)
+                proc_items.append(b)
             elif b.behavior_type == ItemBehaviorType.BUILDUP:
-                self._buildup_items.append(b)
+                # Apply hero-scaled buildup rate
+                name = b.item.name
+                if name in s.buildup_overrides:
+                    b.buildup_per_shot = s.buildup_overrides[name]
+                elif name in s.buildup_time_defaults and fire_rate > 0:
+                    shots = fire_rate * s.buildup_time_defaults[name]
+                    b.buildup_per_shot = 100.0 / shots if shots > 0 else b.buildup_per_shot
+                buildup_items.append(b)
             elif b.behavior_type == ItemBehaviorType.STACK_AMPLIFIER:
-                self._stack_amplifiers.append(b)
+                stack_amplifiers.append(b)
             elif b.behavior_type == ItemBehaviorType.PULSE_PASSIVE:
-                self._pulse_items.append(b)
-            # All items with on_hit_debuffs go into the debuff list
+                pulse_items.append(b)
             if b.on_hit_debuffs:
-                self._debuff_items.append(b)
+                debuff_items.append(b)
 
-        # Seed events
-        self._push(0.0, 0, EventType.BULLET_FIRE, "weapon")
+        return CombatantState(
+            attack=attack,
+            defense=defense,
+            hero=hero,
+            boons=boons,
+            behaviors=behaviors,
+            proc_items=proc_items,
+            buildup_items=buildup_items,
+            stack_amplifiers=stack_amplifiers,
+            debuff_items=debuff_items,
+            pulse_items=pulse_items,
+        )
 
-        # Pulse items start firing at t=0
-        for b in self._pulse_items:
-            self._push(0.0, 5, EventType.PULSE_TRIGGER, b.item.name)
+    def _initialize(self) -> None:
+        """Set up both combatant states and seed events."""
+        s = self.settings
 
-        # Active items
-        self._seed_active_items()
+        # Build combatant states
+        self.a = self._build_combatant(
+            self.config.attacker, self.config.attacker_build, s.attacker_boons,
+        )
+        self.b = self._build_combatant(
+            self.config.defender, self.config.defender_build, s.defender_boons,
+        )
 
-        # Abilities
-        self._seed_abilities()
+        # Seed combatant A events (always)
+        self._seed_combatant_events(
+            "a", self.a,
+            self.config.active_schedule, self.config.ability_schedule,
+        )
 
-        # Regen ticks every 1s
-        if self.target.hp_regen > 0:
-            self._push(1.0, 20, EventType.REGEN_TICK, "regen")
+        # Seed combatant B events (only when bidirectional)
+        if s.bidirectional:
+            self._seed_combatant_events(
+                "b", self.b,
+                self.config.defender_active_schedule,
+                self.config.defender_ability_schedule,
+            )
+
+        # Regen ticks for both combatants
+        if self.b.defense.hp_regen > 0:
+            self._push(1.0, 20, EventType.REGEN_TICK, "regen", combatant="b")
+        if s.bidirectional and self.a.defense.hp_regen > 0:
+            self._push(1.0, 20, EventType.REGEN_TICK, "regen", combatant="a")
+
+        # Capture initial effective HP (before shields are consumed)
+        self._b_effective_hp = self._initial_effective_hp(self.b.defense)
+        self._a_effective_hp = self._initial_effective_hp(self.a.defense)
 
         # End marker
         self._push(s.duration, 100, EventType.SIM_END, "sim")
 
-    def _push(
-        self, time: float, priority: int, event_type: EventType,
-        source: str, metadata: dict | None = None,
+    def _seed_combatant_events(
+        self, cid: str, combatant: CombatantState,
+        active_schedule: list[ActiveUse], ability_schedule: list[AbilityUse],
     ) -> None:
-        """Push an event onto the priority queue."""
-        heapq.heappush(
-            self.queue,
-            SimEvent(time=time, priority=priority, event_type=event_type,
-                     source=source, metadata=metadata or {}),
-        )
+        """Seed weapon, pulse, active, and ability events for a combatant."""
+        # Weapon fire
+        self._push(0.0, 0, EventType.BULLET_FIRE, "weapon", combatant=cid)
 
-    def _seed_active_items(self) -> None:
-        """Schedule initial active item uses."""
-        schedule = self.config.active_schedule
+        # Pulse items
+        for b in combatant.pulse_items:
+            self._push(0.0, 5, EventType.PULSE_TRIGGER, b.item.name, combatant=cid)
+
+        # Active items
+        schedule = list(active_schedule)
         if not schedule:
-            # Auto-schedule all DOT_ACTIVE behaviors on cooldown
-            for b in self.behaviors:
+            for b in combatant.behaviors:
                 if b.behavior_type == ItemBehaviorType.DOT_ACTIVE:
                     schedule.append(ActiveUse(
                         item_name=b.item.name, first_use=0.5,
@@ -770,158 +900,189 @@ class CombatSimulator:
         for use in schedule:
             t = use.first_use / self.settings.active_item_uptime if self.settings.active_item_uptime > 0 else use.first_use
             self._push(t, 3, EventType.ACTIVE_USE, use.item_name,
-                       {"use_on_cooldown": use.use_on_cooldown})
+                       metadata={"use_on_cooldown": use.use_on_cooldown},
+                       combatant=cid)
 
-    def _seed_abilities(self) -> None:
-        """Schedule initial ability uses."""
-        schedule = self.config.ability_schedule
-        if not schedule:
-            # Auto-schedule all damaging abilities on cooldown
-            for i, ability in enumerate(self.config.attacker.abilities):
+        # Abilities
+        ab_schedule = list(ability_schedule)
+        if not ab_schedule:
+            for i, ability in enumerate(combatant.hero.abilities):
                 if ability.base_damage > 0 and ability.cooldown > 0:
-                    schedule.append(AbilityUse(
+                    ab_schedule.append(AbilityUse(
                         ability_index=i, first_use=0.1 * (i + 1),
                         use_on_cooldown=True,
                     ))
-        for use in schedule:
+        for use in ab_schedule:
             self._push(use.first_use, 4, EventType.ABILITY_USE,
                        f"ability_{use.ability_index}",
-                       {"ability_index": use.ability_index,
-                        "use_on_cooldown": use.use_on_cooldown})
+                       metadata={"ability_index": use.ability_index,
+                                 "use_on_cooldown": use.use_on_cooldown},
+                       combatant=cid)
+
+    def _push(
+        self, time: float, priority: int, event_type: EventType,
+        source: str, metadata: dict | None = None, combatant: str = "a",
+    ) -> None:
+        """Push an event onto the priority queue."""
+        heapq.heappush(
+            self.queue,
+            SimEvent(time=time, priority=priority, combatant=combatant,
+                     event_type=event_type, source=source,
+                     metadata=metadata or {}),
+        )
 
     # ── Weapon firing & reload ────────────────────────────────
 
-    def _handle_bullet_fire(self, event: SimEvent) -> None:
+    def _handle_bullet_fire(
+        self, event: SimEvent, actor: CombatantState, opponent: CombatantState,
+    ) -> None:
         """Fire a bullet, apply damage, trigger on-hit items, schedule next."""
         t = event.time
-        atk = self.attacker
+        cid = event.combatant
+        atk = actor.attack
         s = self.settings
 
         # Uptime check — skip this shot window if weapon isn't active
         if s.weapon_uptime < 1.0:
-            # Model uptime as periodic gaps: shoot for uptime%, idle for rest
-            cycle = 2.0  # 2s evaluation window
+            cycle = 2.0
             active_window = cycle * s.weapon_uptime
             if (t % cycle) >= active_window:
                 next_active = t + (cycle - (t % cycle))
-                self._push(next_active, 1, EventType.BULLET_FIRE, "weapon")
+                self._push(next_active, 1, EventType.BULLET_FIRE, "weapon", combatant=cid)
                 return
 
         # Out of ammo -> reload
         if atk.ammo_remaining <= 0:
-            self._push(t, 2, EventType.RELOAD_START, "weapon")
+            self._push(t, 2, EventType.RELOAD_START, "weapon", combatant=cid)
             return
 
         atk.ammo_remaining -= 1
-        self._bullets_fired += 1
+        actor.bullets_fired += 1
 
         # Accuracy: expected-value model
         hit_mult = s.accuracy
         hs_mult = 1.0
         is_hs = False
         if s.headshot_rate > 0:
-            hs_mult = 1.0 + s.headshot_rate * (s.headshot_multiplier - 1.0)
-            is_hs = s.headshot_rate > 0  # for logging: partial headshot
+            hero_hs_mult = actor.hero.crit_bonus_start
+            hs_mult = 1.0 + s.headshot_rate * (hero_hs_mult - 1.0)
+            is_hs = s.headshot_rate > 0
 
-        # Bullet resist + damage amp from debuffs on target
-        resist = self.target.effective_bullet_resist(t)
-        damage_amp = self.target.effective_damage_amp(t)
+        # Bullet resist + damage amp from debuffs on opponent
+        resist = opponent.defense.effective_bullet_resist(t)
+        damage_amp = opponent.defense.effective_damage_amp(t)
         raw_dmg = atk.weapon_damage * hit_mult * hs_mult
-        final_dmg = raw_dmg * (1.0 + damage_amp) * (1.0 - resist)
+        final_dmg = raw_dmg * atk.falloff * (1.0 + damage_amp) * (1.0 - resist)
 
         if final_dmg > 0:
-            self._apply_damage(t, "weapon", final_dmg, "bullet", is_hs)
+            self._apply_damage(t, "weapon", final_dmg, "bullet", cid, actor, opponent, is_hs)
 
         if is_hs and s.headshot_rate > 0:
-            self._headshots += 1
+            actor.headshots += 1
 
         # Trigger on-hit items and bullet-triggered debuffs
-        self._on_bullet_hit(t)
-        self._on_bullet_damage(t)
+        self._on_bullet_hit(t, actor, opponent, cid)
+        self._on_bullet_damage(t, actor, opponent)
 
-        # Schedule next bullet
+        # Schedule next bullet (apply fire rate slow from debuffs on actor)
         if atk.fire_rate > 0:
-            interval = 1.0 / atk.fire_rate
-            self._push(t + interval, 1, EventType.BULLET_FIRE, "weapon")
+            fire_rate_slow = actor.defense.effective_fire_rate_slow(t)
+            effective_fire_rate = atk.fire_rate * (1.0 - fire_rate_slow)
+            effective_fire_rate = max(0.1, effective_fire_rate)
+            interval = 1.0 / effective_fire_rate
+            self._push(t + interval, 1, EventType.BULLET_FIRE, "weapon", combatant=cid)
 
-    def _handle_reload_start(self, event: SimEvent) -> None:
+    def _handle_reload_start(
+        self, event: SimEvent, actor: CombatantState, opponent: CombatantState,
+    ) -> None:
         """Begin reload. Optionally weave a melee hit."""
         t = event.time
-        self._reloads += 1
+        cid = event.combatant
+        actor.reloads += 1
 
-        # Melee during reload window
+        reload_extension = 0.0
         if self.settings.melee_after_reload:
-            self._push(t + 0.1, 2, EventType.MELEE_HIT, "heavy_melee")
+            self._push(t + 0.1, 2, EventType.MELEE_HIT, "heavy_melee", combatant=cid)
+            if self.settings.reload_cancel_melee:
+                reload_extension = DamageCalculator.HEAVY_MELEE_CYCLE
 
-        self._push(t + self.attacker.reload_time, 1, EventType.RELOAD_END, "weapon")
+        self._push(t + actor.attack.reload_time + reload_extension, 1,
+                   EventType.RELOAD_END, "weapon", combatant=cid)
 
-    def _handle_reload_end(self, event: SimEvent) -> None:
+    def _handle_reload_end(
+        self, event: SimEvent, actor: CombatantState, opponent: CombatantState,
+    ) -> None:
         """Finish reload, resume firing."""
-        self.attacker.ammo_remaining = self.attacker.magazine_size
-        self._push(event.time, 1, EventType.BULLET_FIRE, "weapon")
+        actor.attack.ammo_remaining = actor.attack.magazine_size
+        self._push(event.time, 1, EventType.BULLET_FIRE, "weapon", combatant=event.combatant)
 
-    def _on_bullet_hit(self, t: float) -> None:
+    def _on_bullet_hit(
+        self, t: float, actor: CombatantState, opponent: CombatantState, cid: str,
+    ) -> None:
         """Process on-hit effects from all proc and buildup items."""
         # Proc items
-        for b in self._proc_items:
+        for b in actor.proc_items:
             name = b.item.name
-            next_avail = self.attacker.proc_cooldowns.get(name, 0.0)
+            next_avail = actor.attack.proc_cooldowns.get(name, 0.0)
             if t < next_avail:
                 continue
-            # Expected-value: scale damage by proc chance
             chance = min(1.0, b.proc_chance / 100.0)
             if chance <= 0:
                 continue
-            self._fire_proc(t, b, chance)
-            self.attacker.proc_cooldowns[name] = t + b.proc_cooldown
+            self._fire_proc(t, b, chance, actor, opponent, cid)
+            actor.attack.proc_cooldowns[name] = t + b.proc_cooldown
 
         # Buildup items
-        for b in self._buildup_items:
-            self._advance_buildup(t, b)
+        for b in actor.buildup_items:
+            self._advance_buildup(t, b, actor, opponent, cid)
 
     # ── Proc items ────────────────────────────────────────────
 
-    def _fire_proc(self, t: float, b: ItemBehavior, chance: float) -> None:
+    def _fire_proc(
+        self, t: float, b: ItemBehavior, chance: float,
+        actor: CombatantState, opponent: CombatantState, cid: str,
+    ) -> None:
         """Fire a proc item's damage (expected-value scaled by chance)."""
         name = b.item.name
         base = b.proc_damage
         if b.spirit_scale > 0:
-            base += b.spirit_scale * self.attacker.spirit_power
+            base += b.spirit_scale * actor.attack.spirit_power
         if b.boon_scale > 0:
-            base += b.boon_scale * self.settings.attacker_boons
+            base += b.boon_scale * actor.boons
 
         scaled = base * chance
 
         if b.damage_type == DamageType.SPIRIT:
-            self._apply_spirit_damage(t, name, scaled)
+            self._apply_spirit_damage(t, name, scaled, actor, opponent, cid)
         else:
-            resist = self.target.effective_bullet_resist(t)
+            resist = opponent.defense.effective_bullet_resist(t)
             final = scaled * (1.0 - resist)
             if final > 0:
-                self._apply_damage(t, name, final, "bullet")
+                self._apply_damage(t, name, final, "bullet", cid, actor, opponent)
 
-        self._procs[name] = self._procs.get(name, 0) + 1
+        actor.procs[name] = actor.procs.get(name, 0) + 1
 
     # ── Buildup items ─────────────────────────────────────────
 
-    def _advance_buildup(self, t: float, b: ItemBehavior) -> None:
+    def _advance_buildup(
+        self, t: float, b: ItemBehavior,
+        actor: CombatantState, opponent: CombatantState, cid: str,
+    ) -> None:
         """Add buildup from a bullet hit. Trigger DoT at 100%."""
         name = b.item.name
-        current, last_time = self.attacker.buildup_trackers.get(name, (0.0, 0.0))
+        current, last_time = actor.attack.buildup_trackers.get(name, (0.0, 0.0))
 
-        # Decay if too long since last shot
         if last_time > 0 and (t - last_time) > b.buildup_decay_time:
             current = 0.0
 
         current += b.buildup_per_shot
-        self.attacker.buildup_trackers[name] = (current, t)
+        actor.attack.buildup_trackers[name] = (current, t)
 
-        # Trigger at 100%
         if current >= 100.0:
-            self.attacker.buildup_trackers[name] = (0.0, t)
-            self._start_dot(t, b)
+            actor.attack.buildup_trackers[name] = (0.0, t)
+            self._start_dot(t, b, cid)
 
-    def _start_dot(self, t: float, b: ItemBehavior) -> None:
+    def _start_dot(self, t: float, b: ItemBehavior, cid: str) -> None:
         """Start a DoT effect: schedule tick events."""
         if b.dot_tick_rate <= 0 or b.dot_duration <= 0:
             return
@@ -932,40 +1093,42 @@ class CombatSimulator:
         for i in range(num_ticks):
             tick_time = t + b.dot_tick_rate * (i + 1)
             self._push(tick_time, 6, EventType.DOT_TICK, b.item.name,
-                       {"dot_id": dot_id, "behavior_name": b.item.name})
+                       metadata={"dot_id": dot_id, "behavior_name": b.item.name},
+                       combatant=cid)
 
-    def _handle_dot_tick(self, event: SimEvent) -> None:
+    def _handle_dot_tick(
+        self, event: SimEvent, actor: CombatantState, opponent: CombatantState,
+    ) -> None:
         """Process a single DoT tick (from items or abilities)."""
         t = event.time
+        cid = event.combatant
         name = event.source
         meta = event.metadata
 
         # Ability-sourced DoT tick (pre-computed damage in metadata)
         if "ability_damage" in meta:
-            self._apply_spirit_damage(t, name, meta["ability_damage"])
+            self._apply_spirit_damage(t, name, meta["ability_damage"], actor, opponent, cid)
             return
 
         # Item-sourced DoT tick
-        b = self._find_behavior(name)
+        b = self._find_behavior(name, actor)
         if b is None:
             return
 
-        # Compute tick damage
         base_dps = b.dot_dps
         if b.dot_spirit_scale > 0:
-            base_dps += b.dot_spirit_scale * self.attacker.spirit_power
+            base_dps += b.dot_spirit_scale * actor.attack.spirit_power
 
         if b.dot_is_percent_hp:
-            tick_dmg = (base_dps / 100.0) * self.target.max_hp * b.dot_tick_rate
+            tick_dmg = (base_dps / 100.0) * opponent.defense.max_hp * b.dot_tick_rate
         else:
             tick_dmg = base_dps * b.dot_tick_rate
 
-        # DoTs deal spirit damage
-        self._apply_spirit_damage(t, name, tick_dmg)
+        self._apply_spirit_damage(t, name, tick_dmg, actor, opponent, cid)
 
-    def _find_behavior(self, item_name: str) -> ItemBehavior | None:
-        """Find a behavior by item name."""
-        for b in self.behaviors:
+    def _find_behavior(self, item_name: str, actor: CombatantState) -> ItemBehavior | None:
+        """Find a behavior by item name in the actor's behaviors."""
+        for b in actor.behaviors:
             if b.item.name == item_name:
                 return b
         return None
@@ -974,92 +1137,94 @@ class CombatSimulator:
 
     def _apply_damage(
         self, t: float, source: str, damage: float,
-        damage_type: str, is_headshot: bool = False,
+        damage_type: str, cid: str,
+        actor: CombatantState, opponent: CombatantState,
+        is_headshot: bool = False,
     ) -> None:
-        """Record damage and reduce target HP (handles shields first)."""
+        """Record damage, reduce opponent HP (shields first), apply lifesteal."""
         remaining = damage
 
         # Absorb with shields first
-        if damage_type == "bullet" and self.target.bullet_shield > 0:
-            absorbed = min(self.target.bullet_shield, remaining)
-            self.target.bullet_shield -= absorbed
+        if damage_type == "bullet" and opponent.defense.bullet_shield > 0:
+            absorbed = min(opponent.defense.bullet_shield, remaining)
+            opponent.defense.bullet_shield -= absorbed
             remaining -= absorbed
-        elif damage_type == "spirit" and self.target.spirit_shield > 0:
-            absorbed = min(self.target.spirit_shield, remaining)
-            self.target.spirit_shield -= absorbed
+        elif damage_type == "spirit" and opponent.defense.spirit_shield > 0:
+            absorbed = min(opponent.defense.spirit_shield, remaining)
+            opponent.defense.spirit_shield -= absorbed
             remaining -= absorbed
 
-        self.target.hp -= remaining
+        opponent.defense.hp -= remaining
 
         self.timeline.append(DamageEntry(
             time=t, source=source, damage=damage,
-            damage_type=damage_type, is_headshot=is_headshot,
+            damage_type=damage_type, combatant=cid, is_headshot=is_headshot,
         ))
 
-        if self.target.hp <= 0 and not self._dead:
-            self._dead = True
+        # Lifesteal: heal the actor based on damage type
+        if damage_type in ("bullet", "melee"):
+            ls_rate = actor.attack.bullet_lifesteal
+        else:  # spirit
+            ls_rate = actor.attack.spirit_lifesteal
 
-    def _apply_spirit_damage(self, t: float, source: str, raw_damage: float) -> None:
-        """Apply spirit damage with all mechanic-based modifiers.
+        if ls_rate > 0 and remaining > 0:
+            heal = remaining * ls_rate
+            # Apply heal reduction on actor (debuffs from opponent)
+            heal_reduction = actor.defense.effective_heal_reduction(t)
+            heal *= (1.0 - heal_reduction)
+            if heal > 0:
+                actor.defense.hp = min(actor.defense.max_hp, actor.defense.hp + heal)
 
-        Central point for all spirit damage. Reads totals from target debuffs:
-        1. Spirit amp stacks (EE) + attacker spirit amp
-        2. Spirit resist shred (Mystic Vuln, EE shred, etc.)
-        3. Damage amp (crippling/soulshredder effects)
-        Then triggers _on_spirit_damage to apply/refresh debuffs.
-        """
-        # Spirit amp: attacker base + amp stacks on target (EE etc.)
-        target_amp = self.target.effective_spirit_amp(t)
-        total_amp = self.attacker.spirit_amp + target_amp
+    def _apply_spirit_damage(
+        self, t: float, source: str, raw_damage: float,
+        actor: CombatantState, opponent: CombatantState, cid: str,
+    ) -> None:
+        """Apply spirit damage with all mechanic-based modifiers."""
+        target_amp = opponent.defense.effective_spirit_amp(t)
+        total_amp = actor.attack.spirit_amp + target_amp
 
-        # Spirit resist after all shred debuffs
-        resist = self.target.effective_spirit_resist(t)
-
-        # Damage amp on target (crippling / soulshredder)
-        damage_amp = self.target.effective_damage_amp(t)
+        resist = opponent.defense.effective_spirit_resist(t)
+        damage_amp = opponent.defense.effective_damage_amp(t)
 
         final = raw_damage * (1.0 + total_amp) * (1.0 + damage_amp) * (1.0 - resist)
 
         if final > 0:
-            self._apply_damage(t, source, final, "spirit")
+            self._apply_damage(t, source, final, "spirit", cid, actor, opponent)
 
         # Trigger on-spirit-damage effects
-        self._on_spirit_damage(t)
+        self._on_spirit_damage(t, actor, opponent)
 
-    def _on_spirit_damage(self, t: float) -> None:
+    def _on_spirit_damage(
+        self, t: float, actor: CombatantState, opponent: CombatantState,
+    ) -> None:
         """Called after any spirit damage. Applies all on-spirit-damage debuffs."""
-        # Stack amplifiers (EE-style): add stacks
-        for b in self._stack_amplifiers:
+        for b in actor.stack_amplifiers:
             name = b.item.name
-            next_avail = self.attacker.proc_cooldowns.get(name, 0.0)
+            next_avail = actor.attack.proc_cooldowns.get(name, 0.0)
             if t < next_avail:
                 continue
-            # Apply spirit amp stack
-            self.target.apply_debuff(
+            opponent.defense.apply_debuff(
                 DebuffType.SPIRIT_AMP_STACK, name, b.stack_value,
                 b.debuff_duration, t, max_stacks=b.max_stacks,
             )
-            self.attacker.proc_cooldowns[name] = t + b.proc_cooldown
+            actor.attack.proc_cooldowns[name] = t + b.proc_cooldown
 
-        # Apply all on_hit_debuffs from items triggered by spirit damage
-        for b in self._debuff_items:
+        for b in actor.debuff_items:
             name = b.item.name
-            # Skip items with proc cooldowns that aren't ready
             if b.proc_cooldown > 0:
-                next_avail = self.attacker.proc_cooldowns.get(name, 0.0)
+                next_avail = actor.attack.proc_cooldowns.get(name, 0.0)
                 if t < next_avail:
                     continue
-                self.attacker.proc_cooldowns[name] = t + b.proc_cooldown
+                actor.attack.proc_cooldowns[name] = t + b.proc_cooldown
             for debuff_type, value, duration in b.on_hit_debuffs:
                 max_stk = b.max_stacks if b.max_stacks > 0 else 1
-                self.target.apply_debuff(debuff_type, name, value, duration, t, max_stk)
+                opponent.defense.apply_debuff(debuff_type, name, value, duration, t, max_stk)
 
-    def _on_bullet_damage(self, t: float) -> None:
+    def _on_bullet_damage(
+        self, t: float, actor: CombatantState, opponent: CombatantState,
+    ) -> None:
         """Called after bullet damage. Applies bullet-triggered debuffs."""
-        # Apply on_hit_debuffs that are on bullet-type or DEBUFF_APPLIER items
-        for b in self._debuff_items:
-            # Only apply from items that trigger on bullet hit
-            # (DEBUFF_APPLIER items and bullet-type procs)
+        for b in actor.debuff_items:
             if b.behavior_type not in (
                 ItemBehaviorType.DEBUFF_APPLIER,
                 ItemBehaviorType.BUILDUP,
@@ -1067,154 +1232,172 @@ class CombatSimulator:
                 continue
             name = b.item.name
             if b.proc_cooldown > 0:
-                next_avail = self.attacker.proc_cooldowns.get(name, 0.0)
+                next_avail = actor.attack.proc_cooldowns.get(name, 0.0)
                 if t < next_avail:
                     continue
-                self.attacker.proc_cooldowns[name] = t + b.proc_cooldown
+                actor.attack.proc_cooldowns[name] = t + b.proc_cooldown
             for debuff_type, value, duration in b.on_hit_debuffs:
                 max_stk = b.max_stacks if b.max_stacks > 0 else 1
-                self.target.apply_debuff(debuff_type, name, value, duration, t, max_stk)
+                opponent.defense.apply_debuff(debuff_type, name, value, duration, t, max_stk)
 
     # ── Active items ──────────────────────────────────────────
 
-    def _handle_active_use(self, event: SimEvent) -> None:
+    def _handle_active_use(
+        self, event: SimEvent, actor: CombatantState, opponent: CombatantState,
+    ) -> None:
         """Activate an active item (Decay, Alchemical Fire, etc.)."""
         t = event.time
+        cid = event.combatant
         name = event.source
         meta = event.metadata
 
-        b = self._find_behavior(name)
+        b = self._find_behavior(name, actor)
         if b is None:
             return
 
-        # Start the DoT
-        self._start_dot(t, b)
+        self._start_dot(t, b, cid)
 
-        # Put on cooldown
         cd = b.active_cooldown
-        if self.attacker.cooldown_reduction > 0:
-            cd *= (1.0 - self.attacker.cooldown_reduction)
+        if actor.attack.item_cooldown_reduction > 0:
+            cd *= (1.0 - actor.attack.item_cooldown_reduction)
             cd = max(0.5, cd)
-        self.attacker.active_cooldowns[name] = t + cd
+        actor.attack.active_cooldowns[name] = t + cd
 
-        # Reschedule if use_on_cooldown
         if meta.get("use_on_cooldown", False):
-            self._push(t + cd, 3, EventType.ACTIVE_USE, name, meta)
+            self._push(t + cd, 3, EventType.ACTIVE_USE, name,
+                       metadata=meta, combatant=cid)
 
     # ── Pulse items ───────────────────────────────────────────
 
-    def _handle_pulse_trigger(self, event: SimEvent) -> None:
+    def _handle_pulse_trigger(
+        self, event: SimEvent, actor: CombatantState, opponent: CombatantState,
+    ) -> None:
         """Fire a pulse item (Torment Pulse — auto-damage on cooldown)."""
         t = event.time
+        cid = event.combatant
         name = event.source
 
-        b = self._find_behavior(name)
+        b = self._find_behavior(name, actor)
         if b is None:
             return
 
         base = b.pulse_damage
         if b.pulse_spirit_scale > 0:
-            base += b.pulse_spirit_scale * self.attacker.spirit_power
+            base += b.pulse_spirit_scale * actor.attack.spirit_power
 
-        self._apply_spirit_damage(t, name, base)
-        self._procs[name] = self._procs.get(name, 0) + 1
+        self._apply_spirit_damage(t, name, base, actor, opponent, cid)
+        actor.procs[name] = actor.procs.get(name, 0) + 1
 
-        # Reschedule
         if b.pulse_cooldown > 0:
-            self._push(t + b.pulse_cooldown, 5, EventType.PULSE_TRIGGER, name)
+            self._push(t + b.pulse_cooldown, 5, EventType.PULSE_TRIGGER, name, combatant=cid)
 
     # ── Hero abilities ────────────────────────────────────────
 
-    def _handle_ability_use(self, event: SimEvent) -> None:
+    def _handle_ability_use(
+        self, event: SimEvent, actor: CombatantState, opponent: CombatantState,
+    ) -> None:
         """Cast a hero ability."""
         t = event.time
+        cid = event.combatant
         meta = event.metadata
         idx = meta.get("ability_index", 0)
 
-        abilities = self.config.attacker.abilities
+        abilities = actor.hero.abilities
         if idx >= len(abilities):
             return
         ability = abilities[idx]
         if ability.base_damage <= 0:
             return
 
-        # Check cooldown
-        next_avail = self.attacker.ability_cooldowns.get(idx, 0.0)
+        next_avail = actor.attack.ability_cooldowns.get(idx, 0.0)
         if t < next_avail:
-            # Reschedule at next available time
             if meta.get("use_on_cooldown", False):
                 self._push(next_avail, 4, EventType.ABILITY_USE,
-                           event.source, meta)
+                           event.source, metadata=meta, combatant=cid)
             return
 
-        # Compute ability damage
-        spirit = self.attacker.spirit_power
-        spirit_contrib = ability.spirit_scaling * spirit
-        raw = ability.base_damage + spirit_contrib
+        # Apply ability upgrades if configured
+        upgrades_map = (self.config.attacker_ability_upgrades if cid == "a"
+                        else self.config.defender_ability_upgrades)
+        tiers = upgrades_map.get(idx)
+        base_damage = ability.base_damage
+        cooldown = ability.cooldown
+        duration = ability.duration
+        spirit_scaling = ability.spirit_scaling
+        if tiers:
+            base_damage, cooldown, duration, spirit_scaling = apply_ability_upgrades(
+                ability, tiers
+            )
 
-        if ability.duration > 0:
-            # DoT ability: schedule ticks
-            tick_rate = 1.0  # default tick rate for abilities
-            num_ticks = int(ability.duration / tick_rate)
+        spirit = actor.attack.spirit_power
+        spirit_contrib = spirit_scaling * spirit
+        raw = base_damage + spirit_contrib
+
+        if duration > 0:
+            tick_rate = 1.0
+            num_ticks = int(duration / tick_rate)
             dmg_per_tick = raw / num_ticks if num_ticks > 0 else raw
             for i in range(num_ticks):
                 tick_t = t + tick_rate * (i + 1)
                 self._push(tick_t, 6, EventType.DOT_TICK, ability.name,
-                           {"ability_damage": dmg_per_tick})
+                           metadata={"ability_damage": dmg_per_tick},
+                           combatant=cid)
         else:
-            # Instant damage
-            self._apply_spirit_damage(t, ability.name, raw)
+            self._apply_spirit_damage(t, ability.name, raw, actor, opponent, cid)
 
-        # Cooldown
-        cd = ability.cooldown
-        if self.attacker.cooldown_reduction > 0:
-            cd *= (1.0 - self.attacker.cooldown_reduction)
+        cd = cooldown
+        if actor.attack.cooldown_reduction > 0:
+            cd *= (1.0 - actor.attack.cooldown_reduction)
             cd = max(0.1, cd)
-        self.attacker.ability_cooldowns[idx] = t + cd
+        actor.attack.ability_cooldowns[idx] = t + cd
 
-        # Reschedule
         if meta.get("use_on_cooldown", False):
-            self._push(t + cd, 4, EventType.ABILITY_USE, event.source, meta)
+            self._push(t + cd, 4, EventType.ABILITY_USE, event.source,
+                       metadata=meta, combatant=cid)
 
     # ── Melee ─────────────────────────────────────────────────
 
-    def _handle_melee_hit(self, event: SimEvent) -> None:
+    def _handle_melee_hit(
+        self, event: SimEvent, actor: CombatantState, opponent: CombatantState,
+    ) -> None:
         """Process a melee hit (light or heavy)."""
         t = event.time
+        cid = event.combatant
         source = event.source
 
         if source == "heavy_melee":
-            raw = self.attacker.heavy_melee_damage
+            raw = actor.attack.heavy_melee_damage
         else:
-            raw = self.attacker.light_melee_damage
+            raw = actor.attack.light_melee_damage
 
-        # Melee uses bullet resist + damage amp
-        resist = self.target.effective_bullet_resist(t)
-        damage_amp = self.target.effective_damage_amp(t)
+        resist = opponent.defense.effective_bullet_resist(t)
+        damage_amp = opponent.defense.effective_damage_amp(t)
         final = raw * (1.0 + damage_amp) * (1.0 - resist)
 
         if final > 0:
-            self._apply_damage(t, source, final, "melee")
+            self._apply_damage(t, source, final, "melee", cid, actor, opponent)
 
     # ── Regen ─────────────────────────────────────────────────
 
-    def _handle_regen_tick(self, event: SimEvent) -> None:
-        """Heal the target by their regen amount, reduced by heal reduction debuffs."""
+    def _handle_regen_tick(
+        self, event: SimEvent, actor: CombatantState, opponent: CombatantState,
+    ) -> None:
+        """Heal a combatant by their regen amount."""
         t = event.time
-        if self._dead:
+        cid = event.combatant
+
+        # The "actor" for regen is the combatant being healed
+        target = actor.defense
+        if target.hp <= 0:
             return
 
-        # Apply heal reduction mechanic
-        heal_reduction = self.target.effective_heal_reduction(t)
-        heal = self.target.hp_regen * (1.0 - heal_reduction)
-        self.target.hp = min(self.target.max_hp, self.target.hp + heal)
+        heal_reduction = target.effective_heal_reduction(t)
+        heal = target.hp_regen * (1.0 - heal_reduction)
+        target.hp = min(target.max_hp, target.hp + heal)
+        target.cleanup_expired(t)
 
-        # Clean up expired debuffs periodically
-        self.target.cleanup_expired(t)
-
-        # Schedule next regen
         if t + 1.0 <= self.settings.duration:
-            self._push(t + 1.0, 20, EventType.REGEN_TICK, "regen")
+            self._push(t + 1.0, 20, EventType.REGEN_TICK, "regen", combatant=cid)
 
     # ── Event dispatch & main loop ────────────────────────────
 
@@ -1231,8 +1414,8 @@ class CombatSimulator:
     }
 
     def _execute(self) -> None:
-        """Process all events in the queue until sim ends or target dies."""
-        max_events = 50_000  # safety cap
+        """Process all events in the queue until sim ends or a combatant dies."""
+        max_events = 100_000  # safety cap (doubled for bidirectional)
         processed = 0
 
         while self.queue and processed < max_events:
@@ -1244,23 +1427,37 @@ class CombatSimulator:
             if event.event_type == EventType.SIM_END:
                 break
 
-            # Skip damage events if target already dead (but allow non-damage)
-            if self._dead and event.event_type not in (
-                EventType.REGEN_TICK, EventType.SIM_END,
-            ):
-                continue
+            # Resolve actor / opponent
+            if event.combatant == "a":
+                actor, opponent = self.a, self.b
+            else:
+                actor, opponent = self.b, self.a
+
+            # Skip damage events if the opponent is already dead
+            # (regen is for the actor, so we check the actor for regen)
+            if event.event_type == EventType.REGEN_TICK:
+                if actor.defense.hp <= 0:
+                    continue
+            else:
+                if opponent.defense.hp <= 0:
+                    continue
+                # Also skip if the actor is dead (they can't attack)
+                if actor.defense.hp <= 0:
+                    continue
 
             handler_name = self._DISPATCH.get(event.event_type)
             if handler_name:
                 handler = getattr(self, handler_name)
-                handler(event)
+                handler(event, actor, opponent)
 
             processed += 1
 
     # ── Result builder ────────────────────────────────────────
 
-    def _build_result(self) -> SimResult:
-        """Aggregate timeline into SimResult."""
+    def _aggregate_side(
+        self, cid: str, actor: CombatantState, opponent: CombatantState,
+    ) -> dict:
+        """Aggregate timeline entries for one combatant's side."""
         total_damage = 0.0
         bullet_damage = 0.0
         spirit_damage = 0.0
@@ -1268,6 +1465,8 @@ class CombatSimulator:
         damage_by_source: dict[str, float] = {}
 
         for entry in self.timeline:
+            if entry.combatant != cid:
+                continue
             total_damage += entry.damage
             damage_by_source[entry.source] = (
                 damage_by_source.get(entry.source, 0.0) + entry.damage
@@ -1279,41 +1478,109 @@ class CombatSimulator:
             elif entry.damage_type == "melee":
                 melee_damage += entry.damage
 
-        duration = self.settings.duration
-        # If target died, use kill time as effective duration
-        kill_time = None
-        if self._dead:
-            for entry in self.timeline:
-                kill_time = entry.time
-            # Find exact kill moment
-            running = 0.0
-            for entry in self.timeline:
-                running += entry.damage
-                if running >= self.target.max_hp:
-                    kill_time = entry.time
-                    break
-            if kill_time is not None:
-                duration = max(0.01, kill_time)
+        return {
+            "total_damage": total_damage,
+            "bullet_damage": bullet_damage,
+            "spirit_damage": spirit_damage,
+            "melee_damage": melee_damage,
+            "damage_by_source": damage_by_source,
+        }
 
-        overall_dps = total_damage / duration if duration > 0 else 0.0
-        dps_by_source = {
-            src: dmg / duration for src, dmg in damage_by_source.items()
+    def _find_kill_time(self, cid: str, effective_hp: float) -> float | None:
+        """Find the time at which a combatant's damage killed the target.
+
+        *effective_hp* should include shields so the kill threshold
+        accounts for all damage that must be dealt before HP reaches zero.
+        """
+        running = 0.0
+        for entry in self.timeline:
+            if entry.combatant != cid:
+                continue
+            running += entry.damage
+            if running >= effective_hp:
+                return entry.time
+        return None
+
+    @staticmethod
+    def _initial_effective_hp(defense: TargetState) -> float:
+        """Return total HP pool including shields at the start of combat."""
+        return defense.max_hp + defense.bullet_shield + defense.spirit_shield
+
+    def _build_result(self) -> SimResult:
+        """Aggregate timeline into SimResult."""
+        bidirectional = self.settings.bidirectional
+
+        # Attacker (A) perspective
+        a_data = self._aggregate_side("a", self.a, self.b)
+        a_kill_time = self._find_kill_time("a", self._b_effective_hp)
+
+        # Defender (B) perspective (for bidirectional)
+        b_data = self._aggregate_side("b", self.b, self.a) if bidirectional else None
+        b_kill_time = self._find_kill_time("b", self._a_effective_hp) if bidirectional else None
+
+        # Determine effective duration: min(first_death, configured_duration)
+        duration = self.settings.duration
+        first_death = duration
+        if a_kill_time is not None:
+            first_death = min(first_death, a_kill_time)
+        if b_kill_time is not None:
+            first_death = min(first_death, b_kill_time)
+        duration = max(0.01, first_death)
+
+        # Determine winner
+        winner = None
+        if bidirectional:
+            if a_kill_time is not None and (b_kill_time is None or a_kill_time <= b_kill_time):
+                winner = "a"
+            elif b_kill_time is not None and (a_kill_time is None or b_kill_time < a_kill_time):
+                winner = "b"
+
+        # A totals
+        a_total = a_data["total_damage"]
+        a_dps = a_total / duration if duration > 0 else 0.0
+        a_dps_by_source = {
+            src: dmg / duration for src, dmg in a_data["damage_by_source"].items()
         } if duration > 0 else {}
 
-        return SimResult(
+        result = SimResult(
             timeline=self.timeline,
-            total_damage=total_damage,
+            total_damage=a_total,
             total_duration=duration,
-            overall_dps=overall_dps,
-            damage_by_source=damage_by_source,
-            dps_by_source=dps_by_source,
-            bullet_damage=bullet_damage,
-            spirit_damage=spirit_damage,
-            melee_damage=melee_damage,
-            bullets_fired=self._bullets_fired,
-            headshots=self._headshots,
-            reloads=self._reloads,
-            procs_triggered=dict(self._procs),
-            kill_time=kill_time,
-            target_hp_remaining=max(0.0, self.target.hp),
+            overall_dps=a_dps,
+            damage_by_source=a_data["damage_by_source"],
+            dps_by_source=a_dps_by_source,
+            bullet_damage=a_data["bullet_damage"],
+            spirit_damage=a_data["spirit_damage"],
+            melee_damage=a_data["melee_damage"],
+            bullets_fired=self.a.bullets_fired,
+            headshots=self.a.headshots,
+            reloads=self.a.reloads,
+            procs_triggered=dict(self.a.procs),
+            kill_time=a_kill_time,
+            target_hp_remaining=max(0.0, self.b.defense.hp),
         )
+
+        # Bidirectional fields
+        if bidirectional and b_data is not None:
+            b_total = b_data["total_damage"]
+            b_dps = b_total / duration if duration > 0 else 0.0
+            b_dps_by_source = {
+                src: dmg / duration for src, dmg in b_data["damage_by_source"].items()
+            } if duration > 0 else {}
+
+            result.defender_total_damage = b_total
+            result.defender_dps = b_dps
+            result.defender_damage_by_source = b_data["damage_by_source"]
+            result.defender_dps_by_source = b_dps_by_source
+            result.defender_bullet_damage = b_data["bullet_damage"]
+            result.defender_spirit_damage = b_data["spirit_damage"]
+            result.defender_melee_damage = b_data["melee_damage"]
+            result.defender_bullets_fired = self.b.bullets_fired
+            result.defender_headshots = self.b.headshots
+            result.defender_reloads = self.b.reloads
+            result.defender_procs_triggered = dict(self.b.procs)
+            result.defender_kill_time = b_kill_time
+            result.attacker_hp_remaining = max(0.0, self.a.defense.hp)
+            result.winner = winner
+
+        return result
