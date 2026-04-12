@@ -8064,9 +8064,9 @@
       "crit_bonus_start_range": 500.0,
       "cycle_time": 0.4725,
       "damage_falloff_bias": 0.5,
-      "damage_falloff_end_range": 2047.24,
+      "damage_falloff_end_range": 1889.76,
       "damage_falloff_end_scale": 0.1,
-      "damage_falloff_start_range": 787.402,
+      "damage_falloff_start_range": 669.291,
       "damage_falloff_start_scale": 1.0,
       "horizontal_punch": 0.0,
       "range": 7000.0,
@@ -27640,7 +27640,7 @@
     },
     "weapon_info": {
       "can_zoom": true,
-      "bullet_damage": 5.5,
+      "bullet_damage": 5.4,
       "bullet_gravity_scale": 0.0,
       "bullet_inherit_shooter_velocity_scale": 0.0,
       "bullet_lifetime": 2.0,
@@ -27726,10 +27726,10 @@
       "shots_per_second_with_reload": 1.0218978102189782,
       "bullets_per_second": 7.777777777777779,
       "bullets_per_second_with_reload": 7.153284671532847,
-      "damage_per_second": 42.777777777777786,
-      "damage_per_second_with_reload": 39.34306569343066,
-      "damage_per_shot": 38.5,
-      "damage_per_magazine": 269.5
+      "damage_per_second": 42.00000000000001,
+      "damage_per_second_with_reload": 38.627737226277375,
+      "damage_per_shot": 37.800000000000004,
+      "damage_per_magazine": 264.6
     },
     "type": "weapon"
   },

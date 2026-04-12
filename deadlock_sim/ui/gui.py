@@ -691,20 +691,21 @@ _CUSTOM_CSS = """
 .dl-card-wrapper {
     position: relative;
     cursor: pointer;
-    display: inline-block;
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+}
+.dl-card-wrapper dl-item-card {
+    display: block;
 }
 .dl-score-badge {
-    position: absolute;
-    bottom: 2px; left: 50%;
-    transform: translateX(-50%);
-    z-index: 20;
     font-size: 9px; font-weight: 700;
     text-align: center; line-height: 1.2;
     background: rgba(0,0,0,0.75);
     padding: 1px 4px;
     border-radius: 3px;
     white-space: nowrap;
-    pointer-events: none;
+    margin-top: -2px;
 }
 
 /* ── Shop layout ─────────────────────────────────────────────── */
@@ -860,7 +861,9 @@ _CUSTOM_CSS = """
 .bl-item-grid {
     display: grid;
     grid-template-columns: repeat(6, 48px);
+    grid-auto-rows: 48px;
     gap: 4px; padding: 4px 0;
+    overflow: visible;
 }
 .bl-slot-empty {
     width: 48px; height: 48px;
@@ -879,9 +882,13 @@ _CUSTOM_CSS = """
 .bl-slot-filled:hover { filter: brightness(1.4); }
 .bl-slot-filled.dl-build-slot {
     overflow: visible; border: none; background: none;
+    width: 48px; height: 48px;
+    display: flex; align-items: flex-start; justify-content: center;
 }
 .bl-slot-filled.dl-build-slot dl-item-card {
-    width: 48px;
+    width: 73px;
+    transform: scale(0.55);
+    transform-origin: top center;
 }
 .bl-slot-cost {
     position: absolute; bottom: 0; left: 0; right: 0;
@@ -998,16 +1005,16 @@ def _render_item_card(
         .on("click", lambda _, it=item: on_click_fn(it))
     )
     with wrapper:
-        # Score badge overlay (when sorting by impact / sim metrics)
-        if score is not None:
-            sign = "+" if score > 0 else ""
-            badge_color = "#4fc3f7" if score > 0 else "#ef5350"
-            ui.element("div").classes("dl-score-badge").style(
-                f"color:{badge_color};"
-            ).text = f"{sign}{score:.1f}{score_suffix}"
         ui.element('dl-item-card').props(
             f'class-name="{item.class_name}" hover-effect="scale"'
         )
+        # Score badge below the card (when sorting by impact / sim metrics)
+        if score is not None:
+            sign = "+" if score > 0 else ""
+            badge_color = "#4fc3f7" if score > 0 else "#ef5350"
+            ui.label(f"{sign}{score:.1f}{score_suffix}").classes(
+                "dl-score-badge"
+            ).style(f"color:{badge_color};")
     return wrapper
 
 # ── Tab: Hero Stats ──────────────────────────────────────────────
@@ -1537,7 +1544,7 @@ def _build_eval_tab(state: _PageState) -> None:
             with shop_panel_area:
                 ui.element("dl-shop-panel").props(
                     'hover-effect="scale"'
-                ).style("width:100%; max-height:640px;")
+                ).style("width:100%; height:640px; overflow-y:auto; display:block;")
 
     # ── Inner functions ───────────────────────────────────────────
 

@@ -4,6 +4,28 @@ DeadlockSim is a damage and combat simulator for the game Deadlock. It calculate
 
 ---
 
+## Spec-Driven Development (SpecKit)
+
+This project uses **SpecKit** for specification-driven development. Non-trivial features follow the pipeline:
+
+1. **Specify** → `specs/<###-feature>/spec.md` (WHAT/WHY)
+2. **Plan** → `specs/<###-feature>/plan.md` (HOW)
+3. **Tasks** → `specs/<###-feature>/tasks.md` (execution checklist)
+4. **Implement** → Execute tasks with test gates
+
+Key files:
+- **Constitution**: `.specify/memory/constitution.md` — six core principles that all specs/plans must satisfy
+- **Templates**: `.specify/templates/` — spec, plan, tasks, checklist templates
+- **Scripts**: `.specify/scripts/powershell/` — `create-new-feature.ps1`, `check-prerequisites.ps1`
+- **Agents**: `.github/agents/` — `spec-writer`, `plan-writer`, `task-generator`
+
+To start a new feature:
+```powershell
+.\.specify\scripts\powershell\create-new-feature.ps1 "Description of feature"
+```
+
+---
+
 ## Commands
 
 ```bash

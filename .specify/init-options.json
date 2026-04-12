@@ -1,7 +1,7 @@
 {
-  "ai": "claude",
-  "ai_commands_dir": null,
-  "ai_skills": false,
+  "ai": "copilot",
+  "ai_commands_dir": ".github/instructions",
+  "ai_skills": true,
   "branch_numbering": "sequential",
   "here": false,
   "offline": false,

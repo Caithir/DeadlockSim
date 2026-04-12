@@ -69740,9 +69740,6 @@
         "section_attributes": [
           {
             "loc_string": "Imbued ability has its <span class=\"highlight\">Cooldown reduced</span> and gains <span class=\"highlight\">Spirit Power</span>. When the ability deals damage, <span class=\"highlight\">freeze</span> the target and apply <span class=\"highlight\">bonus damage</span>. <span class=\"diminish\"><br><br>Cooldown is per target.</span>",
-            "properties": [
-              "CooldownPerTarget"
-            ],
             "important_properties": [
               "ImbuedCooldownReduction",
               "ImbuedTechPower",
@@ -69755,7 +69752,28 @@
     ],
     "upgrades": [
       {
-        "property_upgrades": []
+        "property_upgrades": [
+          {
+            "name": "AbilityCooldown",
+            "bonus": "-2"
+          },
+          {
+            "name": "ImbuedCooldownReduction",
+            "bonus": "15"
+          },
+          {
+            "name": "ImbuedTechPower",
+            "bonus": "40"
+          },
+          {
+            "name": "Damage",
+            "bonus": "100"
+          },
+          {
+            "name": "FreezeDuration",
+            "bonus": "0.3"
+          }
+        ]
       }
     ],
     "is_active_item": false,
@@ -70077,7 +70095,28 @@
     ],
     "upgrades": [
       {
-        "property_upgrades": []
+        "property_upgrades": [
+          {
+            "name": "Stamina",
+            "bonus": "1"
+          },
+          {
+            "name": "BonusHealth",
+            "bonus": "250"
+          },
+          {
+            "name": "ResistStealAmount",
+            "bonus": "20"
+          },
+          {
+            "name": "DPS",
+            "bonus": "125"
+          },
+          {
+            "name": "AbilityDuration",
+            "bonus": "3"
+          }
+        ]
       }
     ],
     "is_active_item": false,
