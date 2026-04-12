@@ -21,6 +21,7 @@ from nicegui import app, ui
 
 from ..api_client import ensure_data_available, refresh_all_data
 from ..data import load_heroes, load_items
+from ..ui_assets import ensure_ui_assets, get_lib_dir, get_cdn_dir, get_api_dir
 from ..engine.builds import BuildEngine
 from ..engine.damage import DamageCalculator
 from ..engine.simulation import CombatSimulator, SimConfig, SimResult, SimSettings
@@ -441,6 +442,24 @@ def _item_image_url(item: Item) -> str:
     return "/static/ui/all_stats.png"
 
 
+def _sim_source_icon(source: str, hero: "HeroStats | None") -> str:
+    """Resolve a simulation damage source name to an icon URL."""
+    if source == "weapon":
+        pb = _items.get("Point Blank")
+        return _item_image_url(pb) if pb else "/static/items/point_blank.png"
+    if source in ("heavy_melee", "light_melee"):
+        mc = _items.get("Melee Charge")
+        return _item_image_url(mc) if mc else "/static/items/melee_charge.png"
+    if hero:
+        for ab in hero.abilities:
+            if ab.name == source:
+                return ab.image_url or "/static/ui/all_stats.png"
+    item = _items.get(source)
+    if item:
+        return _item_image_url(item)
+    return "/static/ui/all_stats.png"
+
+
 def _prop_display(prop: dict) -> str:
     """Format a single property for display: prefix + value + postfix + label."""
     val = prop.get("value", "")
@@ -668,6 +687,26 @@ _CUSTOM_CSS = """
     font-style: italic; margin-top: 4px;
 }
 
+/* dl-item-card wrapper (Option A overlay) */
+.dl-card-wrapper {
+    position: relative;
+    cursor: pointer;
+    display: inline-block;
+}
+.dl-score-badge {
+    position: absolute;
+    bottom: 2px; left: 50%;
+    transform: translateX(-50%);
+    z-index: 20;
+    font-size: 9px; font-weight: 700;
+    text-align: center; line-height: 1.2;
+    background: rgba(0,0,0,0.75);
+    padding: 1px 4px;
+    border-radius: 3px;
+    white-space: nowrap;
+    pointer-events: none;
+}
+
 /* ── Shop layout ─────────────────────────────────────────────── */
 .shop-card-grid {
     display: flex; flex-wrap: wrap;
@@ -748,20 +787,20 @@ _CUSTOM_CSS = """
 /* ── Stat rows in results panel ──────────────────────────────── */
 .stat-row {
     display: flex; align-items: baseline;
-    padding: 2px 0; gap: 6px;
-    font-size: 12px; border-bottom: 1px solid rgba(255,255,255,0.04);
+    padding: 1px 2px; gap: 4px;
+    font-size: 11px; border-bottom: 1px solid rgba(255,255,255,0.04);
 }
 .stat-row-click {
     display: flex; align-items: baseline;
-    padding: 2px 0; gap: 6px;
-    font-size: 12px; border-bottom: 1px solid rgba(255,255,255,0.04);
+    padding: 1px 2px; gap: 4px;
+    font-size: 11px; border-bottom: 1px solid rgba(255,255,255,0.04);
     cursor: pointer; border-radius: 3px;
 }
 .stat-row-click:hover { background: rgba(255,255,255,0.06); }
-.stat-row-label { color: #888; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.stat-row-val   { color: #e8e8e8; font-variant-numeric: tabular-nums; min-width: 40px; text-align: right; white-space: nowrap; }
-.stat-row-bonus { color: #7aff7a; font-size: 11px; min-width: 32px; text-align: right; white-space: nowrap; }
-.stat-row-perk  { color: #555; font-size: 10px; min-width: 32px; text-align: right; white-space: nowrap; }
+.stat-row-label { color: #888; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 10px; }
+.stat-row-val   { color: #e8e8e8; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; flex-shrink: 0; }
+.stat-row-bonus { color: #7aff7a; font-size: 10px; text-align: right; white-space: nowrap; flex-shrink: 0; }
+.stat-row-perk  { color: #555; font-size: 9px; text-align: right; white-space: nowrap; flex-shrink: 0; }
 
 /* ── Legacy chip (optimizer tab) ─────────────────────────────── */
 .build-item-chip {
@@ -838,6 +877,12 @@ _CUSTOM_CSS = """
     overflow: hidden; transition: filter 0.1s;
 }
 .bl-slot-filled:hover { filter: brightness(1.4); }
+.bl-slot-filled.dl-build-slot {
+    overflow: visible; border: none; background: none;
+}
+.bl-slot-filled.dl-build-slot dl-item-card {
+    width: 48px;
+}
 .bl-slot-cost {
     position: absolute; bottom: 0; left: 0; right: 0;
     background: rgba(0,0,0,0.78);
@@ -941,78 +986,29 @@ def _render_item_card(
     score_suffix: str = "",
     score_detail: dict | None = None,
 ) -> ui.element:
-    """Render a shop item as a card: icon + name + optional score badge + tooltip.
+    """Render a shop item using the deadlock-ui ``<dl-item-card>`` web component.
 
-    score_detail: optional dict of score metrics to append to the tooltip
-                  (e.g. {"sim_dps_delta": 12.3, "sim_ehp_delta": 5.0}).
-    Returns the card root element so callers can track / remove it.
+    The web component (Shadow DOM) provides the game-accurate card visual:
+    item image, category colour, tier badge, and rich tooltip.
+    Our wrapper adds: click handler, score overlay badge.
     """
-    colors = _CAT_COLORS.get(item.category, _CAT_COLORS["weapon"])
-    tooltip_inner = _build_tooltip_html(item)
-
-    # Append DPS/EHP delta info to tooltip if available
-    if score_detail:
-        tooltip_inner += (
-            '<div style="margin-top:8px;padding-top:6px;'
-            'border-top:1px solid rgba(255,255,255,0.15);">'
-            '<div style="color:#888;font-size:10px;font-weight:bold;'
-            'text-transform:uppercase;letter-spacing:0.08em;margin-bottom:3px;">'
-            'IMPACT</div>'
-        )
-        _score_labels = {
-            "sim_dps_delta": ("DPS", "#e8a838"),
-            "sim_ehp_delta": ("EHP", "#90a8f0"),
-            "sim_dps_per_soul": ("DPS/1k Souls", "#e8a838"),
-            "sim_ehp_per_soul": ("EHP/1k Souls", "#90a8f0"),
-            "dps_delta": ("Gun DPS", "#e8a838"),
-            "ehp_delta": ("EHP", "#90a8f0"),
-            "spirit_delta": ("Spirit DPS", "#c090f0"),
-            "dps_per_soul": ("DPS/1k Souls", "#e8a838"),
-            "ehp_per_soul": ("EHP/1k Souls", "#90a8f0"),
-        }
-        for key, val in score_detail.items():
-            if abs(val) < 0.01:
-                continue
-            label, color = _score_labels.get(key, (key, "#ccc"))
-            sign = "+" if val > 0 else ""
-            if "soul" in key.lower():
-                display = f"{sign}{val * 1000:.1f}"
-            else:
-                display = f"{sign}{val:.1f}"
-            tooltip_inner += (
-                f'<div style="color:{color};font-size:12px;line-height:1.6;">'
-                f'{label}: <b>{display}</b></div>'
-            )
-        tooltip_inner += '</div>'
-
-    _TIER_ROMAN = {1: "I", 2: "II", 3: "III", 4: "IV", 5: "V"}
-
-    card = ui.element("div").classes("item-card").style(
-        f"border-color:{colors['border']}; background:{colors['bg']};"
-    ).on("click", lambda _, it=item: on_click_fn(it))
-    with card:
-        ui.image(_item_image_url(item)).style("width: 54px; height: 54px; object-fit: contain;")
-        # Tier indicator
-        tier_label = _TIER_ROMAN.get(item.tier, "")
-        if tier_label:
-            ui.element("div").classes("item-card-tier").text = tier_label
-        # Score badge (shown when sorting by impact/sim metrics)
+    wrapper = (
+        ui.element("div")
+        .classes("dl-card-wrapper")
+        .on("click", lambda _, it=item: on_click_fn(it))
+    )
+    with wrapper:
+        # Score badge overlay (when sorting by impact / sim metrics)
         if score is not None:
             sign = "+" if score > 0 else ""
             badge_color = "#4fc3f7" if score > 0 else "#ef5350"
-            ui.element("div").style(
-                f"font-size:9px; font-weight:700; color:{badge_color};"
-                "text-align:center; line-height:1.2; margin-top:1px;"
+            ui.element("div").classes("dl-score-badge").style(
+                f"color:{badge_color};"
             ).text = f"{sign}{score:.1f}{score_suffix}"
-        # Item name
-        ui.element("div").classes("item-card-name").text = item.name
-        with ui.tooltip().style(
-            f"background:{colors['bg']}; border:1px solid {colors['border']}; "
-            "padding:10px 14px; border-radius:8px; font-size:13px;"
-            "max-width:380px; white-space:normal; word-wrap:break-word;"
-        ):
-            ui.html(tooltip_inner)
-    return card
+        ui.element('dl-item-card').props(
+            f'class-name="{item.class_name}" hover-effect="scale"'
+        )
+    return wrapper
 
 # ── Tab: Hero Stats ──────────────────────────────────────────────
 
@@ -1047,6 +1043,23 @@ def _build_hero_stats_tab() -> None:
                     ui.label(hero.name).classes("text-lg font-bold text-amber-400")
                     if hero.hero_labs:
                         ui.label("[Hero Labs - stats may be incomplete]").classes("text-red-400 text-sm")
+                    # Hero-specific scaling indicator badges
+                    _scaling_badges = []
+                    if hero.scaling_stats:
+                        for s in hero.scaling_stats:
+                            _scaling_badges.append(f"{s.target_stat} ← {s.source_stat}")
+                    if hero.bullet_resist_gain:
+                        _scaling_badges.append(f"Bullet Resist / Boon")
+                    if hero.spirit_resist_gain:
+                        _scaling_badges.append(f"Spirit Resist / Boon")
+                    if hero.attack_range_gain:
+                        _scaling_badges.append(f"Atk Range / Boon")
+                    if hero.alt_fire_damage_gain:
+                        _scaling_badges.append(f"Alt Fire Dmg / Boon")
+                    if _scaling_badges:
+                        with ui.row().classes("gap-1 flex-wrap"):
+                            for badge_text in _scaling_badges:
+                                ui.badge(badge_text).props("color=deep-purple").classes("text-xs")
                     if hero.role:
                         ui.label(f"Role: {hero.role}").classes("text-gray-300 text-sm")
                     if hero.playstyle:
@@ -1094,8 +1107,28 @@ def _build_hero_stats_tab() -> None:
                         {"stat": "Dmg Gain / Boon", "value": _fv(hero.damage_gain, "+.2f") if hero.damage_gain else "-"},
                         {"stat": "HP Gain / Boon", "value": _fv(hero.hp_gain, "+.0f")},
                         {"stat": "Spirit Gain / Boon", "value": _fv(hero.spirit_gain, "+.1f")},
+                        {"stat": "Melee Gain / Boon", "value": _fv(hero.melee_gain, "+.2f") if hero.melee_gain else "-"},
                     ]
+                    if hero.bullet_resist_gain:
+                        scaling_rows.append({"stat": "Bullet Resist / Boon", "value": f"+{hero.bullet_resist_gain:.2f}%"})
+                    if hero.spirit_resist_gain:
+                        scaling_rows.append({"stat": "Spirit Resist / Boon", "value": f"+{hero.spirit_resist_gain:.2f}%"})
+                    if hero.attack_range_gain:
+                        scaling_rows.append({"stat": "Atk Range / Boon", "value": f"+{hero.attack_range_gain:.1f}"})
+                    if hero.alt_fire_damage_gain:
+                        scaling_rows.append({"stat": "Alt Fire Dmg / Boon", "value": _fv(hero.alt_fire_damage_gain, "+.2f")})
                     ui.table(columns=stat_columns, rows=scaling_rows, row_key="stat").classes("w-80").props("dense flat bordered")
+
+                    # Hero-specific spirit scaling
+                    if hero.scaling_stats:
+                        ui.label("Spirit Scaling").classes("text-sm font-bold text-purple-400 mt-3 mb-1")
+                        spirit_scale_rows = []
+                        for s in hero.scaling_stats:
+                            spirit_scale_rows.append({
+                                "stat": s.target_stat,
+                                "value": f"{s.scale:g} per {s.source_stat}",
+                            })
+                        ui.table(columns=stat_columns, rows=spirit_scale_rows, row_key="stat").classes("w-80").props("dense flat bordered")
 
                     # Max-level projections
                     if hero.max_level_hp > 0 or hero.max_gun_dps > 0:
@@ -1348,7 +1381,7 @@ def _build_eval_tab(state: _PageState) -> None:
 
         # ══ LEFT: Build panel (three sections) ════════════════════
         with ui.column().style(
-            "width:330px; min-width:300px; padding:0 12px 8px 0;"
+            "width:380px; min-width:340px; padding:0 12px 8px 0;"
             "border-right:1px solid #1e1e1e; gap:0;"
         ):
 
@@ -1391,6 +1424,11 @@ def _build_eval_tab(state: _PageState) -> None:
                 save_build_btn = ui.button("Save", icon="bookmark").props("dense flat").style(
                     "font-size:11px; color:#68d4a8;"
                 )
+                import_build_btn = ui.button(
+                    "Import", icon="screenshot_monitor",
+                ).props("dense flat").style(
+                    "font-size:11px; color:#64b5f6;"
+                ).tooltip("Import build from game screenshot (screen share)")
                 ui.element("div").style("flex:1")
                 build_total_lbl = ui.label("0 Souls").style(
                     "color:#e8c252; font-size:12px; font-weight:700;"
@@ -1423,9 +1461,26 @@ def _build_eval_tab(state: _PageState) -> None:
                     "update:model-value", lambda: refresh_shop()
                 )
 
+                # Browse-only shop panel toggle
+                shop_panel_visible = {"value": False}
+
+                def _toggle_shop_panel():
+                    shop_panel_visible["value"] = not shop_panel_visible["value"]
+                    shop_panel_area.set_visibility(shop_panel_visible["value"])
+                    shop_score_area.set_visibility(not shop_panel_visible["value"])
+                    shop_toggle_btn.text = (
+                        "Score View" if shop_panel_visible["value"] else "Shop View"
+                    )
+
+                shop_toggle_btn = ui.button(
+                    "Shop View", icon="storefront", on_click=_toggle_shop_panel
+                ).props("flat dense").classes("text-amber-400")
+
             ui.separator().style("margin:2px 0;")
 
-            with ui.row().classes("w-full gap-0 items-start").style("min-width:0; flex:1 1 0;"):
+            shop_score_area = ui.element("div").classes("w-full")
+            with shop_score_area:
+              with ui.row().classes("w-full gap-0 items-start").style("min-width:0; flex:1 1 0;"):
 
                 # Vertical category tab strip
                 with ui.column().classes("cat-vtab-bar"):
@@ -1475,6 +1530,14 @@ def _build_eval_tab(state: _PageState) -> None:
                 shop_container = ui.scroll_area().classes("border-l rounded-r").style(
                     "background:#0d0d16; height:620px; min-width:0; flex:1 1 0;"
                 )
+
+            # Browse-only shop panel (hidden by default)
+            shop_panel_area = ui.element("div").classes("w-full")
+            shop_panel_area.set_visibility(False)
+            with shop_panel_area:
+                ui.element("dl-shop-panel").props(
+                    'hover-effect="scale"'
+                ).style("width:100%; max-height:640px;")
 
     # ── Inner functions ───────────────────────────────────────────
 
@@ -1802,6 +1865,181 @@ def _build_eval_tab(state: _PageState) -> None:
 
     save_build_btn.on_click(save_current_build)
 
+    # ── Import Build from Screenshot ──────────────────────────────
+
+    _SCREENCAP_JS = """
+    async function captureGameScreen() {
+        try {
+            const stream = await navigator.mediaDevices.getDisplayMedia({
+                video: { cursor: 'never' },
+                audio: false,
+            });
+            const track = stream.getVideoTracks()[0];
+            const settings = track.getSettings();
+            const w = settings.width || 1920;
+            const h = settings.height || 1080;
+
+            const video = document.createElement('video');
+            video.srcObject = stream;
+            video.width = w;
+            video.height = h;
+            await video.play();
+
+            await new Promise(r => requestAnimationFrame(r));
+
+            // Cap resolution to 1920px wide to keep under WebSocket limit
+            const MAX_W = 1920;
+            let outW = w, outH = h;
+            if (w > MAX_W) {
+                outW = MAX_W;
+                outH = Math.round(h * (MAX_W / w));
+            }
+
+            const canvas = document.createElement('canvas');
+            canvas.width = outW;
+            canvas.height = outH;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0, outW, outH);
+
+            track.stop();
+            stream.getTracks().forEach(t => t.stop());
+
+            // JPEG at 70%% quality - keeps payload under ~500KB for WebSocket
+            return canvas.toDataURL('image/jpeg', 0.70);
+        } catch (err) {
+            console.error('Screen capture cancelled or failed:', err);
+            return null;
+        }
+    }
+    return await captureGameScreen();
+    """
+
+    async def _import_build_from_screen():
+        """Capture screen via WebRTC, run OpenCV template matching, add matched items."""
+        from ..engine.build_import import BuildImporter
+
+        notif = ui.notification(
+            "Select your Deadlock window to capture...",
+            spinner=True, timeout=None, type="ongoing",
+        )
+
+        try:
+            data_url = await ui.run_javascript(_SCREENCAP_JS, timeout=30.0)
+        except Exception as exc:
+            notif.dismiss()
+            ui.notify(f"Screen capture failed: {exc}", type="negative")
+            return
+
+        if not data_url:
+            notif.dismiss()
+            ui.notify("Screen capture was cancelled.", type="warning")
+            return
+
+        notif.message = "Analyzing screenshot for items..."
+
+        image_dir = Path(__file__).resolve().parent.parent.parent / "data" / "images" / "items"
+
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            None,
+            BuildImporter.import_from_data_url,
+            data_url,
+            image_dir,
+            _ITEM_IMAGE,
+        )
+
+        notif.dismiss()
+
+        if result.error:
+            ui.notify(f"Import error: {result.error}", type="negative")
+            return
+
+        if not result.matches:
+            ui.notify(
+                "No items detected. Make sure the Deadlock buy menu is visible.",
+                type="warning",
+            )
+            return
+
+        # Show confirmation dialog with detected items
+        with ui.dialog() as dlg, ui.card().style(
+            "min-width:420px; max-width:600px; max-height:80vh;"
+        ):
+            ui.label("Detected Items").classes("text-lg font-bold text-amber-400")
+            ui.label(
+                f"Found {len(result.matches)} items in screenshot "
+                f"({result.screenshot_width}\u00d7{result.screenshot_height})"
+            ).style("color:#aaa; font-size:12px;")
+
+            with ui.column().classes("w-full gap-1").style(
+                "max-height:400px; overflow-y:auto;"
+            ):
+                selected = {m.item_name: True for m in result.matches}
+
+                for match in result.matches:
+                    item = _items.get(match.item_name)
+                    if not item:
+                        continue
+                    already_owned = any(
+                        i.name == match.item_name for i in state.build_items
+                    )
+                    with ui.row().classes("items-center gap-2 w-full").style(
+                        "padding:4px 8px; border-radius:4px;"
+                        f"background:{'#333' if not already_owned else '#2a2a1a'};"
+                    ):
+                        cb = ui.checkbox(
+                            value=not already_owned,
+                            on_change=lambda e, n=match.item_name: selected.update(
+                                {n: e.value}
+                            ),
+                        )
+                        if already_owned:
+                            cb.disable()
+                        img_url = _item_image_url(item)
+                        ui.image(img_url).style("width:32px; height:32px;")
+                        cat_c = _CAT_COLORS.get(item.category, {})
+                        ui.label(match.item_name).style(
+                            f"color:{cat_c.get('text', '#ccc')}; font-size:13px;"
+                        )
+                        ui.label(f"{match.confidence:.0%}").style(
+                            "color:#888; font-size:11px; margin-left:auto;"
+                        )
+                        if already_owned:
+                            ui.label("(owned)").style(
+                                "color:#a08030; font-size:11px;"
+                            )
+
+            with ui.row().classes("w-full justify-end gap-2 mt-2"):
+                ui.button("Cancel", on_click=dlg.close).props("flat")
+
+                def _do_import():
+                    added = 0
+                    for match in result.matches:
+                        if not selected.get(match.item_name, False):
+                            continue
+                        item = _items.get(match.item_name)
+                        if item and not any(
+                            i.name == item.name for i in state.build_items
+                        ):
+                            add_item(item)
+                            added += 1
+                    dlg.close()
+                    if added:
+                        ui.notify(
+                            f"Imported {added} item{'s' if added != 1 else ''}!",
+                            type="positive",
+                        )
+                    else:
+                        ui.notify("No new items to import.", type="info")
+
+                ui.button("Import Selected", icon="download", on_click=_do_import).props(
+                    "color=primary"
+                )
+
+        dlg.open()
+
+    import_build_btn.on_click(_import_build_from_screen)
+
     def refresh_build_display():
         from ..data import souls_to_boons, souls_to_ability_points, ABILITY_TIER_COSTS
 
@@ -1993,25 +2231,12 @@ def _build_eval_tab(state: _PageState) -> None:
             )
 
             for i, item in enumerate(state.build_items):
-                colors = _CAT_COLORS.get(item.category, _CAT_COLORS["weapon"])
-                with ui.element("div").classes("bl-slot-filled").style(
-                    f"border-color:{colors['border']}; background:{colors['bg']};"
-                ).on("click", lambda _, idx=i: remove_item(idx)):
-                    ui.image(_item_image_url(item)).style(
-                        "width:40px; height:40px; object-fit:contain;"
+                with ui.element("div").classes("bl-slot-filled dl-build-slot").on(
+                    "click", lambda _, idx=i: remove_item(idx)
+                ):
+                    ui.element('dl-item-card').props(
+                        f'class-name="{item.class_name}" tooltip-trigger="none"'
                     )
-                    ui.element("div").classes("bl-slot-cost").style(
-                        f"color:{colors['text']};"
-                    ).text = f"{item.cost:,}"
-                    with ui.tooltip().style(
-                        f"background:{colors['bg']}; border:1px solid {colors['border']};"
-                        "padding:10px 14px; border-radius:8px; font-size:13px;"
-                    ):
-                        ui.html(
-                            _build_tooltip_html(item)
-                            + '<div style="color:#888;font-size:10px;margin-top:6px;'
-                            'font-style:italic;">Click to remove</div>'
-                        )
 
             # Empty slots
             for slot_i in range(total_slots - filled):
@@ -2179,12 +2404,12 @@ def _build_eval_tab(state: _PageState) -> None:
 
             # ── Horizontal stat columns ──────────────────────────
             with ui.row().classes("w-full").style(
-                "align-items:flex-start; gap:8px;"
+                "align-items:flex-start; gap:0;"
             ):
                 # ── Weapon column ────────────────────────────────
                 weapon_col = ui.column().classes("gap-0").style(
-                    "flex:1; min-width:0; overflow:hidden;"
-                    "border-right:1px solid rgba(255,255,255,0.06); padding-right:8px;"
+                    "flex:1; min-width:0;"
+                    "border-right:1px solid rgba(255,255,255,0.08); padding-right:6px; margin-right:6px;"
                 )
                 with weapon_col:
                     with ui.element("div").style(
@@ -2199,7 +2424,7 @@ def _build_eval_tab(state: _PageState) -> None:
                     if bs.weapon_damage_pct or bs.fire_rate_pct:
                         dps_bd.append(("Item Bonus", br.sustained_dps - (bbr.sustained_dps if bbr else 0)))
                     dps_delta = br.sustained_dps - (bbr.sustained_dps if bbr else 0)
-                    _stat_row(weapon_col, "Sustained DPS", f"{br.sustained_dps:.1f}",
+                    _stat_row(weapon_col, "DPS", f"{br.sustained_dps:.1f}",
                         delta(br.sustained_dps, bbr.sustained_dps if bbr else 0),
                         breakdown=dps_bd if len(dps_bd) > 1 else None,
                         per_k=pk(dps_delta))
@@ -2207,7 +2432,7 @@ def _build_eval_tab(state: _PageState) -> None:
                     for src, val in (bd.get("weapon_damage_pct") or []):
                         dmg_bd.append((src, val * (bbr.damage_per_bullet if bbr else 0)))
                     dmg_delta = br.damage_per_bullet - (bbr.damage_per_bullet if bbr else 0)
-                    _stat_row(weapon_col, "Bullet Damage",
+                    _stat_row(weapon_col, "Bullet Dmg",
                         f"{br.damage_per_bullet:.1f}",
                         delta(br.damage_per_bullet, bbr.damage_per_bullet if bbr else 0),
                         breakdown=dmg_bd if len(dmg_bd) > 1 else None,
@@ -2229,11 +2454,11 @@ def _build_eval_tab(state: _PageState) -> None:
                         breakdown=ammo_bd or None, fmt="int",
                         per_k=pk(ammo_delta))
                     if bs.bullet_lifesteal:
-                        _stat_row(weapon_col, "Bullet Lifesteal", f"{bs.bullet_lifesteal:.0%}",
+                        _stat_row(weapon_col, "B. Lifesteal", f"{bs.bullet_lifesteal:.0%}",
                                   breakdown=_bd("bullet_lifesteal"), fmt="pct",
                                   per_k=pk(bs.bullet_lifesteal))
                     if bs.bullet_resist_shred:
-                        _stat_row(weapon_col, "Bullet Shred", f"{bs.bullet_resist_shred:.0%}",
+                        _stat_row(weapon_col, "B. Shred", f"{bs.bullet_resist_shred:.0%}",
                                   breakdown=_bd("bullet_resist_shred"), fmt="pct",
                                   per_k=pk(bs.bullet_resist_shred))
                 else:
@@ -2242,8 +2467,8 @@ def _build_eval_tab(state: _PageState) -> None:
 
                 # ── Vitality column ──────────────────────────────
                 vitality_col = ui.column().classes("gap-0").style(
-                    "flex:1; min-width:0; overflow:hidden;"
-                    "border-right:1px solid rgba(255,255,255,0.06); padding-right:8px;"
+                    "flex:1; min-width:0;"
+                    "border-right:1px solid rgba(255,255,255,0.08); padding-right:6px; margin-right:6px;"
                 )
                 with vitality_col:
                     with ui.element("div").style(
@@ -2295,17 +2520,17 @@ def _build_eval_tab(state: _PageState) -> None:
                     breakdown=regen_bd if bs.hp_regen else None,
                     per_k=pk(bs.hp_regen))
                 if bs.bullet_resist_pct:
-                    _stat_row(vitality_col, "Bullet Resist", f"{bs.bullet_resist_pct:.0%}",
+                    _stat_row(vitality_col, "B. Resist", f"{bs.bullet_resist_pct:.0%}",
                               breakdown=_bd("bullet_resist_pct"), fmt="pct",
                               per_k=pk(bs.bullet_resist_pct))
                 if bs.spirit_resist_pct:
-                    _stat_row(vitality_col, "Spirit Resist", f"{bs.spirit_resist_pct:.0%}",
+                    _stat_row(vitality_col, "S. Resist", f"{bs.spirit_resist_pct:.0%}",
                               breakdown=_bd("spirit_resist_pct"), fmt="pct",
                               per_k=pk(bs.spirit_resist_pct))
 
                 # ── Spirit column ────────────────────────────────
                 spirit_col = ui.column().classes("gap-0").style(
-                    "flex:1; min-width:0; overflow:hidden;"
+                    "flex:1; min-width:0;"
                 )
                 with spirit_col:
                     with ui.element("div").style(
@@ -2324,20 +2549,20 @@ def _build_eval_tab(state: _PageState) -> None:
                     pre_mult = bs.spirit_power + boon_spirit
                     sp_bd.append((f"Spirit Power % (+{bs.spirit_power_pct:.0%})", pre_mult * bs.spirit_power_pct))
                 sp_delta = total_spirit - int(boon_spirit) if boon_spirit else total_spirit
-                _stat_row(spirit_col, "Spirit Power", f"+{total_spirit}" if total_spirit else "0",
+                _stat_row(spirit_col, "SP", f"+{total_spirit}" if total_spirit else "0",
                     f"(+{bs.spirit_power:.0f} items)" if bs.spirit_power else "",
                     breakdown=sp_bd or None,
                     per_k=pk(sp_delta))
                 if bs.spirit_power_pct:
-                    _stat_row(spirit_col, "Spirit Power %", f"+{bs.spirit_power_pct:.0%}",
+                    _stat_row(spirit_col, "SP %", f"+{bs.spirit_power_pct:.0%}",
                               breakdown=_bd("spirit_power_pct"), fmt="pct",
                               per_k=pk(bs.spirit_power_pct))
                 if bs.spirit_amp_pct:
-                    _stat_row(spirit_col, "Spirit Amp", f"+{bs.spirit_amp_pct:.0%}",
+                    _stat_row(spirit_col, "S. Amp", f"+{bs.spirit_amp_pct:.0%}",
                               breakdown=_bd("spirit_amp_pct"), fmt="pct",
                               per_k=pk(bs.spirit_amp_pct))
                 if bs.spirit_lifesteal:
-                    _stat_row(spirit_col, "Spirit Lifesteal", f"{bs.spirit_lifesteal:.0%}",
+                    _stat_row(spirit_col, "S. Lifesteal", f"{bs.spirit_lifesteal:.0%}",
                               breakdown=_bd("spirit_lifesteal"), fmt="pct",
                               per_k=pk(bs.spirit_lifesteal))
                 if bs.cooldown_reduction:
@@ -2345,11 +2570,11 @@ def _build_eval_tab(state: _PageState) -> None:
                               breakdown=_bd("cooldown_reduction"), fmt="pct",
                               per_k=pk(bs.cooldown_reduction))
                 if bs.spirit_resist_shred:
-                    _stat_row(spirit_col, "Spirit Shred", f"{bs.spirit_resist_shred:.0%}",
+                    _stat_row(spirit_col, "S. Shred", f"{bs.spirit_resist_shred:.0%}",
                               breakdown=_bd("spirit_resist_shred"), fmt="pct",
                               per_k=pk(bs.spirit_resist_shred))
                 spirit_dps_delta = spirit_dps - base_spirit_dps
-                _stat_row(spirit_col, "Spirit DPS",
+                _stat_row(spirit_col, "S. DPS",
                     f"{spirit_dps:.1f}" if spirit_dps > 0 else "-",
                     per_k=pk(spirit_dps_delta))
 
@@ -3242,6 +3467,7 @@ def _build_simulation_tab(state: _PageState) -> None:
             source_buckets: dict[str, list[float]] = {}
             source_dtype: dict[str, str] = {}
             source_cid: dict[str, str] = {}
+            source_base: dict[str, str] = {}
             for entry in result.timeline:
                 lbl = f"{entry.source} ({entry.combatant.upper()})" if is_bidir else entry.source
                 idx = min(int(entry.time / bucket_size), n_buckets - 1)
@@ -3249,6 +3475,7 @@ def _build_simulation_tab(state: _PageState) -> None:
                     source_buckets[lbl] = [0.0] * n_buckets
                     source_dtype[lbl] = entry.damage_type
                     source_cid[lbl] = entry.combatant
+                    source_base[lbl] = entry.source
                 source_buckets[lbl][idx] += entry.damage
 
             _dtype_colors_a = {
@@ -3259,6 +3486,7 @@ def _build_simulation_tab(state: _PageState) -> None:
             }
 
             chart_series = []
+            legend_data = []
             for source in sorted(source_buckets, key=lambda s: (source_cid.get(s, "a"), source_dtype.get(s, ""), s)):
                 cid = source_cid.get(source, "a")
                 dtype = source_dtype.get(source, "spirit")
@@ -3274,6 +3502,13 @@ def _build_simulation_tab(state: _PageState) -> None:
                     "itemStyle": {"color": color},
                     "emphasis": {"focus": "series"},
                 })
+                base_src = source_base.get(source, source)
+                hero_for_icon = atk_hero if cid == "a" else def_hero
+                icon_url = _sim_source_icon(base_src, hero_for_icon)
+                legend_data.append({
+                    "name": source,
+                    "icon": f"image://{icon_url}",
+                })
 
             ui.echart({
                 "tooltip": {
@@ -3281,7 +3516,7 @@ def _build_simulation_tab(state: _PageState) -> None:
                     "axisPointer": {"type": "shadow"},
                 },
                 "legend": {
-                    "data": [s["name"] for s in chart_series],
+                    "data": legend_data,
                     "textStyle": {"color": "#ccc"},
                     "type": "scroll",
                     "bottom": 0,
@@ -3355,6 +3590,7 @@ def _build_simulation_tab(state: _PageState) -> None:
             }).classes("w-full h-36")
 
         # Damage by source table
+        hero = _heroes.get(hero_name)
         src_rows = []
         for src, dmg in sorted(dmg_by_source.items(), key=lambda x: -x[1]):
             s_dps = dps_by_source.get(src, 0)
@@ -3362,6 +3598,7 @@ def _build_simulation_tab(state: _PageState) -> None:
             src_rows.append({
                 "source": src, "damage": f"{dmg:.0f}",
                 "dps": f"{s_dps:.1f}", "pct": f"{pct:.1f}%",
+                "icon": _sim_source_icon(src, hero),
             })
         src_cols = [
             {"name": "source", "label": "Source", "field": "source", "align": "left"},
@@ -3369,9 +3606,18 @@ def _build_simulation_tab(state: _PageState) -> None:
             {"name": "dps", "label": "DPS", "field": "dps", "align": "right"},
             {"name": "pct", "label": "%", "field": "pct", "align": "right"},
         ]
-        ui.table(columns=src_cols, rows=src_rows, row_key="source").classes(
+        src_tbl = ui.table(columns=src_cols, rows=src_rows, row_key="source").classes(
             "w-full"
         ).props("dense flat bordered")
+        src_tbl.add_slot("body-cell-source", """
+            <q-td :props="props">
+                <div style="display:flex; align-items:center; gap:6px;">
+                    <img :src="props.row.icon"
+                         style="width:20px; height:20px; object-fit:contain; border-radius:3px;">
+                    <span>{{ props.row.source }}</span>
+                </div>
+            </q-td>
+        """)
 
         # Combat stats
         ui.separator().style("margin:4px 0;")
@@ -3505,6 +3751,7 @@ def run_gui() -> None:
     global _heroes, _hero_names, _items, _item_names
 
     ensure_data_available()
+    ensure_ui_assets()
     _heroes = load_heroes()
     _hero_names = sorted(_heroes.keys())
     _items = load_items()
@@ -3515,11 +3762,34 @@ def run_gui() -> None:
     app.add_static_files("/static/items", str(data_dir / "items"))
     app.add_static_files("/static/ui", str(data_dir / "ui"))
 
+    # Serve deadlock-ui web component assets locally
+    app.add_static_files("/dl-lib", str(get_lib_dir()))
+    app.add_static_files("/dl-cdn", str(get_cdn_dir()))
+
+    # API proxy routes for web component data
+    from starlette.responses import FileResponse
+
+    @app.get("/dl-api/items")
+    async def _dl_api_items(language: str = "english"):
+        path = get_api_dir() / f"items_{language}.json"
+        if not path.exists():
+            path = get_api_dir() / "items_english.json"
+        return FileResponse(path, media_type="application/json")
+
+    @app.get("/dl-api/generic-data")
+    async def _dl_api_generic_data():
+        return FileResponse(
+            get_api_dir() / "generic-data.json", media_type="application/json"
+        )
+
     @ui.page("/")
     def index():
         state = _PageState()
         ui.dark_mode(True)
         ui.add_css(_CUSTOM_CSS)
+
+        # Load deadlock-ui web components (served from local cache)
+        ui.add_head_html('<script type="module" src="/dl-lib/main.esm.js"></script>')
 
         # Header row with title + refresh button
         with ui.row().classes("items-center gap-4 w-full"):
@@ -3532,6 +3802,8 @@ def run_gui() -> None:
                 try:
                     loop = asyncio.get_event_loop()
                     result = await loop.run_in_executor(None, refresh_all_data)
+                    # Also refresh UI component assets
+                    await loop.run_in_executor(None, lambda: ensure_ui_assets(force=True))
                     # Reload global data
                     global _heroes, _hero_names, _items, _item_names
                     _heroes = load_heroes()

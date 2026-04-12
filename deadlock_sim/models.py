@@ -38,6 +38,18 @@ class HeroAbility:
 
 
 @dataclass
+class HeroScalingStat:
+    """A hero-specific stat that scales from another stat (typically spirit power).
+
+    Example: Haze's clip size scales from spirit at 0.5 per point.
+    """
+
+    target_stat: str  # human-readable name, e.g. "Clip Size"
+    source_stat: str  # human-readable source, e.g. "Spirit Power"
+    scale: float  # coefficient, e.g. 0.5
+
+
+@dataclass
 class HeroStats:
     """Base stats for a Deadlock hero, loaded from data."""
 
@@ -80,6 +92,14 @@ class HeroStats:
     damage_gain: float = 0.0  # bullet damage gained per boon
     hp_gain: float = 0.0  # HP gained per boon
     spirit_gain: float = 0.0  # spirit gained per boon
+    melee_gain: float = 0.0  # melee damage gained per boon
+    bullet_resist_gain: float = 0.0  # bullet resist % gained per boon
+    spirit_resist_gain: float = 0.0  # spirit resist % gained per boon
+    attack_range_gain: float = 0.0  # attack range gained per boon
+    alt_fire_damage_gain: float = 0.0  # alt fire damage gained per boon
+
+    # Hero-specific spirit scaling (stats that scale from another stat)
+    scaling_stats: list[HeroScalingStat] = field(default_factory=list)
 
     # Max-level projections
     max_level_hp: float = 0.0

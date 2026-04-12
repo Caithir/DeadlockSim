@@ -20,3 +20,14 @@ Thumbs.db
 # Temp files
 *.tmp
 ~$*
+
+# Deadlock UI component cache (downloaded at runtime)
+data/ui_lib/
+data/ui_cache/
+
+# Deadlock UI component cache
+data/ui_lib/
+data/ui_cache/
+# Deadlock UI component cache
+data/ui_lib/
+data/ui_cache/

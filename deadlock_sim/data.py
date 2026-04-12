@@ -17,6 +17,7 @@ from .api_client import is_cache_available, load_cache
 from .models import (
     AbilityUpgrade,
     HeroAbility,
+    HeroScalingStat,
     HeroStats,
     Item,
     ShopTier,
@@ -343,6 +344,58 @@ def _parse_hero_from_api(
         or level_ups.get("MODIFIER_VALUE_TECH_POWER", 0.0)
         or 0.0
     )
+    melee_gain = (
+        level_ups.get("EMeleeDamage", 0.0)
+        or level_ups.get("MODIFIER_VALUE_BASE_MELEE_DAMAGE_FROM_LEVEL", 0.0)
+        or 0.0
+    )
+    bullet_resist_gain = (
+        level_ups.get("EBulletArmorDamageReduction", 0.0)
+        or level_ups.get("MODIFIER_VALUE_BULLET_ARMOR_DAMAGE_RESIST", 0.0)
+        or 0.0
+    )
+    spirit_resist_gain = (
+        level_ups.get("ETechArmorDamageReduction", 0.0)
+        or level_ups.get("MODIFIER_VALUE_TECH_ARMOR_DAMAGE_RESIST", 0.0)
+        or 0.0
+    )
+    attack_range_gain = (
+        level_ups.get("EBonusAttackRange", 0.0)
+        or level_ups.get("MODIFIER_VALUE_BONUS_ATTACK_RANGE", 0.0)
+        or 0.0
+    )
+    alt_fire_damage_gain = (
+        level_ups.get("EBulletDamageAltFire", 0.0)
+        or level_ups.get("MODIFIER_VALUE_BASE_BULLET_DAMAGE_FROM_LEVEL_ALT_FIRE", 0.0)
+        or 0.0
+    )
+
+    # Hero-specific spirit scaling (stats that scale from another stat)
+    _SCALING_STAT_NAMES = {
+        "EClipSize": "Clip Size",
+        "EBulletDamage": "Bullet Damage",
+        "ESprintSpeed": "Sprint Speed",
+        "EMaxMoveSpeed": "Move Speed",
+        "ERoundsPerSecond": "Rounds/s",
+        "EFireRate": "Fire Rate",
+        "ETechArmorDamageReduction": "Spirit Resist",
+        "EBulletArmorDamageReduction": "Bullet Resist",
+        "EBaseHealthRegen": "Health Regen",
+        "EHeavyMeleeDamage": "Heavy Melee",
+    }
+    _SOURCE_STAT_NAMES = {
+        "ETechPower": "Spirit Power",
+    }
+    raw_scaling = hero_data.get("scaling_stats", {})
+    scaling_stats: list[HeroScalingStat] = []
+    for target_key, info in raw_scaling.items():
+        if isinstance(info, dict) and info.get("scale", 0):
+            source_key = info.get("scaling_stat", "")
+            scaling_stats.append(HeroScalingStat(
+                target_stat=_SCALING_STAT_NAMES.get(target_key, target_key),
+                source_stat=_SOURCE_STAT_NAMES.get(source_key, source_key),
+                scale=info["scale"],
+            ))
 
     # Max-level projections (assuming ~48 boons at max level)
     max_boons = 48
@@ -384,6 +437,12 @@ def _parse_hero_from_api(
         damage_gain=damage_gain,
         hp_gain=hp_gain,
         spirit_gain=spirit_gain,
+        melee_gain=melee_gain,
+        bullet_resist_gain=bullet_resist_gain,
+        spirit_resist_gain=spirit_resist_gain,
+        attack_range_gain=attack_range_gain,
+        alt_fire_damage_gain=alt_fire_damage_gain,
+        scaling_stats=scaling_stats,
         max_level_hp=max_level_hp,
         max_gun_damage=max_gun_damage,
         max_gun_dps=max_gun_dps,

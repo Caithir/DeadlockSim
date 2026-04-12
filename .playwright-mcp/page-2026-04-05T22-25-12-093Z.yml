@@ -1,0 +1,628 @@
+- main [ref=e5]:
+  - generic [ref=e6]:
+    - generic [ref=e7]:
+      - generic [ref=e8]: DEADLOCK COMBAT SIMULATOR
+      - button "Refresh Data" [ref=e9] [cursor=pointer]:
+        - generic [ref=e10]:
+          - img [ref=e11]: sync
+          - generic [ref=e12]: Refresh Data
+      - button "Bug Report" [ref=e13] [cursor=pointer]:
+        - generic [ref=e14]:
+          - img [ref=e15]: bug_report
+          - generic [ref=e16]: Bug Report
+    - generic [ref=e17]: 38 heroes, 171 items loaded
+    - separator [ref=e18]
+    - tablist [ref=e19]:
+      - generic [ref=e20]:
+        - tab "Build" [selected] [ref=e21] [cursor=pointer]:
+          - generic [ref=e23]: Build
+        - tab "Saved Builds" [ref=e25] [cursor=pointer]:
+          - generic [ref=e27]: Saved Builds
+        - tab "Simulation" [ref=e29] [cursor=pointer]:
+          - generic [ref=e31]: Simulation
+        - tab "Settings" [ref=e33] [cursor=pointer]:
+          - generic [ref=e35]: Settings
+        - tab "Hero Stats" [ref=e37] [cursor=pointer]:
+          - generic [ref=e39]: Hero Stats
+    - tabpanel [ref=e42]:
+      - tabpanel [ref=e43]:
+        - generic [ref=e44]:
+          - generic [ref=e45]:
+            - generic [ref=e49] [cursor=pointer]:
+              - generic [ref=e50]:
+                - generic: Hero
+                - generic [ref=e51]:
+                  - generic [ref=e52]: Abrams
+                  - combobox "Hero" [active] [ref=e53]: Abrams
+              - generic [ref=e55]: arrow_drop_down
+            - generic [ref=e56]:
+              - generic [ref=e60]:
+                - generic: Accuracy %
+                - spinbutton "Accuracy %" [ref=e61]: "50"
+              - generic [ref=e65]:
+                - generic: Extra Souls
+                - spinbutton "Extra Souls" [ref=e66]: "0"
+            - generic [ref=e68]:
+              - generic [ref=e69]: 0 Souls
+              - generic [ref=e70]: ⬥ 0 Boons
+              - generic [ref=e71]: "⬥ AP: 0/0"
+            - generic [ref=e73]:
+              - img [ref=e74]:
+                - img [ref=e77]
+              - generic [ref=e78]: Abrams
+              - generic [ref=e79]:
+                - img [ref=e81]:
+                  - img [ref=e84]
+                - img [ref=e86]:
+                  - img [ref=e89]
+                - img [ref=e91]:
+                  - img [ref=e94]
+                - img [ref=e96]:
+                  - img [ref=e99]
+            - generic [ref=e100]:
+              - generic [ref=e101]:
+                - img [ref=e102]:
+                  - img [ref=e105]
+                - generic [ref=e106]: Shoulder Charge
+                - generic [ref=e107]:
+                  - generic: T1
+                - generic [ref=e108]:
+                  - generic: T2
+                - generic [ref=e109]:
+                  - generic: T3
+              - generic [ref=e110]:
+                - img [ref=e111]:
+                  - img [ref=e114]
+                - generic [ref=e115]: Infernal Resilience
+                - generic [ref=e116]:
+                  - generic: T1
+                - generic [ref=e117]:
+                  - generic: T2
+                - generic [ref=e118]:
+                  - generic: T3
+              - generic [ref=e119]:
+                - img [ref=e120]:
+                  - img [ref=e123]
+                - generic [ref=e124]: Seismic Impact
+                - generic [ref=e125]:
+                  - generic: T1
+                - generic [ref=e126]:
+                  - generic: T2
+                - generic [ref=e127]:
+                  - generic: T3
+              - generic [ref=e128]:
+                - img [ref=e129]:
+                  - img [ref=e132]
+                - generic [ref=e133]: Siphon Life
+                - generic [ref=e134]:
+                  - generic: T1
+                - generic [ref=e135]:
+                  - generic: T2
+                - generic [ref=e136]:
+                  - generic: T3
+            - separator [ref=e137]
+            - generic [ref=e151]:
+              - button "Clear" [ref=e152] [cursor=pointer]:
+                - generic [ref=e154]: Clear
+              - button "Save" [ref=e155] [cursor=pointer]:
+                - generic [ref=e156]:
+                  - img [ref=e157]: bookmark
+                  - generic [ref=e158]: Save
+              - generic [ref=e159]: 0 Souls
+            - separator [ref=e160]
+            - generic [ref=e161]:
+              - generic [ref=e162]:
+                - generic [ref=e163]:
+                  - generic [ref=e164]: Gun DPS
+                  - generic [ref=e166]: "48.4"
+                - generic [ref=e167]:
+                  - generic [ref=e168]: Spirit DPS
+                  - generic [ref=e170]: "57.0"
+                - generic [ref=e171]:
+                  - generic [ref=e172]: EHP
+                  - generic [ref=e174]: "810"
+                - generic [ref=e175]:
+                  - generic [ref=e176]: Regen
+                  - generic [ref=e178]: 1.5/s
+              - generic [ref=e179]:
+                - generic [ref=e180]:
+                  - generic [ref=e182]: WEAPON
+                  - generic [ref=e183]:
+                    - generic [ref=e184]: DPS
+                    - generic [ref=e185]: "48.4"
+                  - generic [ref=e186]:
+                    - generic [ref=e187]: Bullet Dmg
+                    - generic [ref=e188]: "32.4"
+                  - generic [ref=e189]:
+                    - generic [ref=e190]: Shots/s
+                    - generic [ref=e191]: "1.59"
+                  - generic [ref=e192]:
+                    - generic [ref=e193]: Ammo
+                    - generic [ref=e194]: "9"
+                - generic [ref=e195]:
+                  - generic [ref=e197]: VITALITY
+                  - generic [ref=e198] [cursor=pointer]:
+                    - generic [ref=e199]: Eff HP
+                    - generic [ref=e200]: "810"
+                  - generic [ref=e201]:
+                    - generic [ref=e202]: Base HP
+                    - generic [ref=e203]: "810"
+                  - generic [ref=e204]:
+                    - generic [ref=e205]: HP Regen
+                    - generic [ref=e206]: +1.5/s
+                - generic [ref=e207]:
+                  - generic [ref=e209]: SPIRIT
+                  - generic [ref=e210]:
+                    - generic [ref=e211]: SP
+                    - generic [ref=e212]: "0"
+                  - generic [ref=e213]:
+                    - generic [ref=e214]: S. DPS
+                    - generic [ref=e215]: "57.0"
+              - separator [ref=e216]
+              - generic [ref=e217] [cursor=pointer]:
+                - generic [ref=e218]: Combined DPS
+                - generic [ref=e219]: "105.4"
+              - generic [ref=e220]:
+                - generic [ref=e221]: Total Cost
+                - generic [ref=e222]: $0
+          - generic [ref=e223]:
+            - generic [ref=e224]:
+              - generic [ref=e227] [cursor=pointer]:
+                - generic [ref=e228]:
+                  - generic: Tier
+                  - generic [ref=e229]:
+                    - generic [ref=e230]: All Tiers
+                    - combobox "Tier" [ref=e231]: All Tiers
+                - generic [ref=e233]: arrow_drop_down
+              - generic [ref=e236] [cursor=pointer]:
+                - generic [ref=e237]:
+                  - generic: Sort By
+                  - generic [ref=e238]:
+                    - generic [ref=e239]: Cost
+                    - combobox "Sort By" [ref=e240]: Cost
+                - generic [ref=e242]: arrow_drop_down
+              - generic [ref=e246]:
+                - generic: Search
+                - textbox "Search" [ref=e247]:
+                  - /placeholder: item name...
+              - checkbox "Show Legendary" [ref=e248] [cursor=pointer]:
+                - img [ref=e251]
+                - generic [ref=e253]: Show Legendary
+            - separator [ref=e254]
+            - generic [ref=e264]:
+              - generic [ref=e267]:
+                - img [ref=e269] [cursor=pointer]:
+                  - img [ref=e272]
+                - img [ref=e274] [cursor=pointer]:
+                  - img [ref=e277]
+                - img [ref=e279] [cursor=pointer]:
+                  - img [ref=e282]
+                - img [ref=e284] [cursor=pointer]:
+                  - img [ref=e287]
+                - img [ref=e289] [cursor=pointer]:
+                  - img [ref=e292]
+                - img [ref=e294] [cursor=pointer]:
+                  - img [ref=e297]
+                - img [ref=e299] [cursor=pointer]:
+                  - img [ref=e302]
+              - generic [ref=e304]:
+                - img [ref=e306] [cursor=pointer]:
+                  - img [ref=e309]
+                - img [ref=e311] [cursor=pointer]:
+                  - img [ref=e314]
+                - img [ref=e316] [cursor=pointer]:
+                  - img [ref=e319]
+                - img [ref=e321] [cursor=pointer]:
+                  - img [ref=e324]
+                - img [ref=e326] [cursor=pointer]:
+                  - img [ref=e329]
+                - img [ref=e331] [cursor=pointer]:
+                  - img [ref=e334]
+                - img [ref=e336] [cursor=pointer]:
+                  - img [ref=e339]
+              - generic [ref=e341]:
+                - img [ref=e343] [cursor=pointer]:
+                  - img [ref=e346]
+                - img [ref=e348] [cursor=pointer]:
+                  - img [ref=e351]
+                - img [ref=e353] [cursor=pointer]:
+                  - img [ref=e356]
+                - img [ref=e358] [cursor=pointer]:
+                  - img [ref=e361]
+                - img [ref=e363] [cursor=pointer]:
+                  - img [ref=e366]
+                - img [ref=e368] [cursor=pointer]:
+                  - img [ref=e371]
+                - img [ref=e373] [cursor=pointer]:
+                  - img [ref=e376]
+                - img [ref=e378] [cursor=pointer]:
+                  - img [ref=e381]
+              - generic [ref=e384]:
+                - img [ref=e386] [cursor=pointer]:
+                  - img [ref=e389]
+                - img [ref=e391] [cursor=pointer]:
+                  - img [ref=e394]
+                - img [ref=e396] [cursor=pointer]:
+                  - img [ref=e399]
+                - img [ref=e401] [cursor=pointer]:
+                  - img [ref=e404]
+                - img [ref=e406] [cursor=pointer]:
+                  - img [ref=e409]
+                - img [ref=e411] [cursor=pointer]:
+                  - img [ref=e414]
+                - img [ref=e416] [cursor=pointer]:
+                  - img [ref=e419]
+                - img [ref=e421] [cursor=pointer]:
+                  - img [ref=e424]
+                - img [ref=e426] [cursor=pointer]:
+                  - img [ref=e429]
+                - img [ref=e431] [cursor=pointer]:
+                  - img [ref=e434]
+                - img [ref=e436] [cursor=pointer]:
+                  - img [ref=e439]
+                - img [ref=e441] [cursor=pointer]:
+                  - img [ref=e444]
+                - img [ref=e446] [cursor=pointer]:
+                  - img [ref=e449]
+                - img [ref=e451] [cursor=pointer]:
+                  - img [ref=e454]
+                - img [ref=e456] [cursor=pointer]:
+                  - img [ref=e459]
+                - img [ref=e461] [cursor=pointer]:
+                  - img [ref=e464]
+              - generic [ref=e466]:
+                - img [ref=e468] [cursor=pointer]:
+                  - img [ref=e471]
+                  - img [ref=e473]
+                - img [ref=e476] [cursor=pointer]:
+                  - img [ref=e479]
+                  - img [ref=e481]
+                - img [ref=e484] [cursor=pointer]:
+                  - img [ref=e487]
+                  - img [ref=e489]
+                - img [ref=e492] [cursor=pointer]:
+                  - img [ref=e495]
+                  - img [ref=e497]
+                - img [ref=e500] [cursor=pointer]:
+                  - img [ref=e503]
+                  - img [ref=e505]
+                - img [ref=e508] [cursor=pointer]:
+                  - img [ref=e511]
+                  - img [ref=e513]
+                - img [ref=e516] [cursor=pointer]:
+                  - img [ref=e519]
+                  - img [ref=e521]
+                - img [ref=e524] [cursor=pointer]:
+                  - img [ref=e527]
+                  - img [ref=e529]
+                - img [ref=e532] [cursor=pointer]:
+                  - img [ref=e535]
+                  - img [ref=e537]
+                - img [ref=e540] [cursor=pointer]:
+                  - img [ref=e543]
+                  - img [ref=e545]
+                - img [ref=e548] [cursor=pointer]:
+                  - img [ref=e551]
+                  - img [ref=e553]
+                - img [ref=e556] [cursor=pointer]:
+                  - img [ref=e559]
+                  - img [ref=e561]
+                - img [ref=e564] [cursor=pointer]:
+                  - img [ref=e567]
+                  - img [ref=e569]
+                - img [ref=e572] [cursor=pointer]:
+                  - img [ref=e575]
+                  - img [ref=e577]
+              - generic [ref=e580]:
+                - img [ref=e582] [cursor=pointer]:
+                  - img [ref=e585]
+                  - img [ref=e587]
+                - img [ref=e590] [cursor=pointer]:
+                  - img [ref=e593]
+                  - img [ref=e595]
+                - img [ref=e598] [cursor=pointer]:
+                  - img [ref=e601]
+                  - img [ref=e603]
+                - img [ref=e606] [cursor=pointer]:
+                  - img [ref=e609]
+                  - img [ref=e611]
+                - img [ref=e614] [cursor=pointer]:
+                  - img [ref=e617]
+                  - img [ref=e619]
+                - img [ref=e622] [cursor=pointer]:
+                  - img [ref=e625]
+                  - img [ref=e627]
+                - img [ref=e630] [cursor=pointer]:
+                  - img [ref=e633]
+                  - img [ref=e635]
+                - img [ref=e638] [cursor=pointer]:
+                  - img [ref=e641]
+                  - img [ref=e643]
+                - img [ref=e646] [cursor=pointer]:
+                  - img [ref=e649]
+                  - img [ref=e651]
+                - img [ref=e654] [cursor=pointer]:
+                  - img [ref=e657]
+                  - img [ref=e659]
+                - img [ref=e662] [cursor=pointer]:
+                  - img [ref=e665]
+                  - img [ref=e667]
+                - img [ref=e670] [cursor=pointer]:
+                  - img [ref=e673]
+                  - img [ref=e675]
+              - generic [ref=e679]:
+                - img [ref=e681] [cursor=pointer]:
+                  - img [ref=e684]
+                  - img [ref=e686]
+                - img [ref=e689] [cursor=pointer]:
+                  - img [ref=e692]
+                  - img [ref=e694]
+                - img [ref=e697] [cursor=pointer]:
+                  - img [ref=e700]
+                  - img [ref=e702]
+                - img [ref=e705] [cursor=pointer]:
+                  - img [ref=e708]
+                  - img [ref=e710]
+                - img [ref=e713] [cursor=pointer]:
+                  - img [ref=e716]
+                  - img [ref=e718]
+                - img [ref=e721] [cursor=pointer]:
+                  - img [ref=e724]
+                  - img [ref=e726]
+                - img [ref=e729] [cursor=pointer]:
+                  - img [ref=e732]
+                  - img [ref=e734]
+                - img [ref=e737] [cursor=pointer]:
+                  - img [ref=e740]
+                  - img [ref=e742]
+                - img [ref=e745] [cursor=pointer]:
+                  - img [ref=e748]
+                  - img [ref=e750]
+                - img [ref=e753] [cursor=pointer]:
+                  - img [ref=e756]
+                  - img [ref=e758]
+                - img [ref=e761] [cursor=pointer]:
+                  - img [ref=e764]
+                  - img [ref=e766]
+                - img [ref=e769] [cursor=pointer]:
+                  - img [ref=e772]
+                  - img [ref=e774]
+                - img [ref=e777] [cursor=pointer]:
+                  - img [ref=e780]
+                  - img [ref=e782]
+                - img [ref=e785] [cursor=pointer]:
+                  - img [ref=e788]
+                  - img [ref=e790]
+                - img [ref=e793] [cursor=pointer]:
+                  - img [ref=e796]
+                  - img [ref=e798]
+                - img [ref=e801] [cursor=pointer]:
+                  - img [ref=e804]
+                  - img [ref=e806]
+                - img [ref=e809] [cursor=pointer]:
+                  - img [ref=e812]
+                  - img [ref=e814]
+                - img [ref=e817] [cursor=pointer]:
+                  - img [ref=e820]
+                  - img [ref=e822]
+              - generic [ref=e825]:
+                - img [ref=e827] [cursor=pointer]:
+                  - img [ref=e830]
+                  - img [ref=e832]
+                - img [ref=e835] [cursor=pointer]:
+                  - img [ref=e838]
+                  - img [ref=e840]
+                - img [ref=e843] [cursor=pointer]:
+                  - img [ref=e846]
+                  - img [ref=e848]
+                - img [ref=e851] [cursor=pointer]:
+                  - img [ref=e854]
+                  - img [ref=e856]
+                - img [ref=e859] [cursor=pointer]:
+                  - img [ref=e862]
+                  - img [ref=e864]
+                - img [ref=e867] [cursor=pointer]:
+                  - img [ref=e870]
+                  - img [ref=e872]
+                - img [ref=e875] [cursor=pointer]:
+                  - img [ref=e878]
+                  - img [ref=e880]
+                - img [ref=e883] [cursor=pointer]:
+                  - img [ref=e886]
+                  - img [ref=e888]
+                - img [ref=e891] [cursor=pointer]:
+                  - img [ref=e894]
+                  - img [ref=e896]
+                - img [ref=e899] [cursor=pointer]:
+                  - img [ref=e902]
+                  - img [ref=e904]
+                - img [ref=e907] [cursor=pointer]:
+                  - img [ref=e910]
+                  - img [ref=e912]
+                - img [ref=e915] [cursor=pointer]:
+                  - img [ref=e918]
+                  - img [ref=e920]
+                - img [ref=e923] [cursor=pointer]:
+                  - img [ref=e926]
+                  - img [ref=e928]
+                - img [ref=e931] [cursor=pointer]:
+                  - img [ref=e934]
+                  - img [ref=e936]
+                - img [ref=e939] [cursor=pointer]:
+                  - img [ref=e942]
+                  - img [ref=e944]
+              - generic [ref=e947]:
+                - img [ref=e949] [cursor=pointer]:
+                  - img [ref=e952]
+                  - img [ref=e954]
+                - img [ref=e957] [cursor=pointer]:
+                  - img [ref=e960]
+                  - img [ref=e962]
+                - img [ref=e965] [cursor=pointer]:
+                  - img [ref=e968]
+                  - img [ref=e970]
+                - img [ref=e973] [cursor=pointer]:
+                  - img [ref=e976]
+                  - img [ref=e978]
+                - img [ref=e981] [cursor=pointer]:
+                  - img [ref=e984]
+                  - img [ref=e986]
+                - img [ref=e989] [cursor=pointer]:
+                  - img [ref=e992]
+                  - img [ref=e994]
+                - img [ref=e997] [cursor=pointer]:
+                  - img [ref=e1000]
+                  - img [ref=e1002]
+                - img [ref=e1005] [cursor=pointer]:
+                  - img [ref=e1008]
+                  - img [ref=e1010]
+                - img [ref=e1013] [cursor=pointer]:
+                  - img [ref=e1016]
+                  - img [ref=e1018]
+                - img [ref=e1021] [cursor=pointer]:
+                  - img [ref=e1024]
+                  - img [ref=e1026]
+                - img [ref=e1029] [cursor=pointer]:
+                  - img [ref=e1032]
+                  - img [ref=e1034]
+                - img [ref=e1037] [cursor=pointer]:
+                  - img [ref=e1040]
+                  - img [ref=e1042]
+                - img [ref=e1045] [cursor=pointer]:
+                  - img [ref=e1048]
+                  - img [ref=e1050]
+              - generic [ref=e1054]:
+                - img [ref=e1056] [cursor=pointer]:
+                  - img [ref=e1059]
+                  - img [ref=e1061]
+                - img [ref=e1064] [cursor=pointer]:
+                  - img [ref=e1067]
+                  - img [ref=e1069]
+                - img [ref=e1072] [cursor=pointer]:
+                  - img [ref=e1075]
+                  - img [ref=e1077]
+                - img [ref=e1080] [cursor=pointer]:
+                  - img [ref=e1083]
+                  - img [ref=e1085]
+                - img [ref=e1088] [cursor=pointer]:
+                  - img [ref=e1091]
+                  - img [ref=e1093]
+                - img [ref=e1096] [cursor=pointer]:
+                  - img [ref=e1099]
+                  - img [ref=e1101]
+                - img [ref=e1104] [cursor=pointer]:
+                  - img [ref=e1107]
+                  - img [ref=e1109]
+                - img [ref=e1112] [cursor=pointer]:
+                  - img [ref=e1115]
+                  - img [ref=e1117]
+                - img [ref=e1120] [cursor=pointer]:
+                  - img [ref=e1123]
+                  - img [ref=e1125]
+                - img [ref=e1128] [cursor=pointer]:
+                  - img [ref=e1131]
+                  - img [ref=e1133]
+                - img [ref=e1136] [cursor=pointer]:
+                  - img [ref=e1139]
+                  - img [ref=e1141]
+                - img [ref=e1144] [cursor=pointer]:
+                  - img [ref=e1147]
+                  - img [ref=e1149]
+              - generic [ref=e1152]:
+                - img [ref=e1154] [cursor=pointer]:
+                  - img [ref=e1157]
+                  - img [ref=e1159]
+                - img [ref=e1162] [cursor=pointer]:
+                  - img [ref=e1165]
+                  - img [ref=e1167]
+                - img [ref=e1170] [cursor=pointer]:
+                  - img [ref=e1173]
+                  - img [ref=e1175]
+                - img [ref=e1178] [cursor=pointer]:
+                  - img [ref=e1181]
+                  - img [ref=e1183]
+                - img [ref=e1186] [cursor=pointer]:
+                  - img [ref=e1189]
+                  - img [ref=e1191]
+                - img [ref=e1194] [cursor=pointer]:
+                  - img [ref=e1197]
+                  - img [ref=e1199]
+                - img [ref=e1202] [cursor=pointer]:
+                  - img [ref=e1205]
+                  - img [ref=e1207]
+                - img [ref=e1210] [cursor=pointer]:
+                  - img [ref=e1213]
+                  - img [ref=e1215]
+                - img [ref=e1218] [cursor=pointer]:
+                  - img [ref=e1221]
+                  - img [ref=e1223]
+                - img [ref=e1226] [cursor=pointer]:
+                  - img [ref=e1229]
+                  - img [ref=e1231]
+                - img [ref=e1234] [cursor=pointer]:
+                  - img [ref=e1237]
+                  - img [ref=e1239]
+                - img [ref=e1242] [cursor=pointer]:
+                  - img [ref=e1245]
+                  - img [ref=e1247]
+                - img [ref=e1250] [cursor=pointer]:
+                  - img [ref=e1253]
+                  - img [ref=e1255]
+                - img [ref=e1258] [cursor=pointer]:
+                  - img [ref=e1261]
+                  - img [ref=e1263]
+                - img [ref=e1266] [cursor=pointer]:
+                  - img [ref=e1269]
+                  - img [ref=e1271]
+                - img [ref=e1274] [cursor=pointer]:
+                  - img [ref=e1277]
+                  - img [ref=e1279]
+              - generic [ref=e1282]:
+                - img [ref=e1284] [cursor=pointer]:
+                  - img [ref=e1287]
+                  - img [ref=e1289]
+                - img [ref=e1292] [cursor=pointer]:
+                  - img [ref=e1295]
+                  - img [ref=e1297]
+                - img [ref=e1300] [cursor=pointer]:
+                  - img [ref=e1303]
+                  - img [ref=e1305]
+                - img [ref=e1308] [cursor=pointer]:
+                  - img [ref=e1311]
+                  - img [ref=e1313]
+                - img [ref=e1316] [cursor=pointer]:
+                  - img [ref=e1319]
+                  - img [ref=e1321]
+                - img [ref=e1324] [cursor=pointer]:
+                  - img [ref=e1327]
+                  - img [ref=e1329]
+                - img [ref=e1332] [cursor=pointer]:
+                  - img [ref=e1335]
+                  - img [ref=e1337]
+                - img [ref=e1340] [cursor=pointer]:
+                  - img [ref=e1343]
+                  - img [ref=e1345]
+                - img [ref=e1348] [cursor=pointer]:
+                  - img [ref=e1351]
+                  - img [ref=e1353]
+                - img [ref=e1356] [cursor=pointer]:
+                  - img [ref=e1359]
+                  - img [ref=e1361]
+                - img [ref=e1364] [cursor=pointer]:
+                  - img [ref=e1367]
+                  - img [ref=e1369]
+                - img [ref=e1372] [cursor=pointer]:
+                  - img [ref=e1375]
+                  - img [ref=e1377]
+                - img [ref=e1380] [cursor=pointer]:
+                  - img [ref=e1383]
+                  - img [ref=e1385]
+                - img [ref=e1388] [cursor=pointer]:
+                  - img [ref=e1391]
+                  - img [ref=e1393]
+                - img [ref=e1396] [cursor=pointer]:
+                  - img [ref=e1399]
+                  - img [ref=e1401]
+                - img [ref=e1404] [cursor=pointer]:
+                  - img [ref=e1407]
+                  - img [ref=e1409]
