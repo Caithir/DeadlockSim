@@ -1,7 +1,7 @@
 """Pytest configuration and fixtures for Playwright GUI tests."""
 
 import os
-import shutil
+import socket
 import subprocess
 import sys
 import time
@@ -11,8 +11,6 @@ import pytest
 import requests
 
 
-SERVER_URL = "http://localhost:8080"
-SERVER_PORT = 8080
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -30,24 +28,60 @@ def wait_for_server(url: str, timeout: int = 30) -> bool:
     return False
 
 
+def _find_free_port() -> int:
+    """Reserve and return an available local TCP port."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        return int(sock.getsockname()[1])
+
+
+def _terminate_gui_processes() -> None:
+    """Stop leftover GUI processes from prior manual or test runs."""
+    try:
+        subprocess.run(
+            [
+                "powershell",
+                "-NoProfile",
+                "-Command",
+                (
+                    "Get-CimInstance Win32_Process "
+                    "| Where-Object { $_.Name -match 'python' -and $_.CommandLine -match 'deadlock_sim.ui.gui' } "
+                    "| ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"
+                ),
+            ],
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except OSError:
+        pass
+
+
 @pytest.fixture(scope="session")
 def gui_server():
     """Start the NiceGUI server once for the whole test session."""
+    _terminate_gui_processes()
+
     # NiceGUI detects pytest-playwright and activates screen-test mode,
     # which requires NICEGUI_SCREEN_TEST_PORT to be set.
+    server_port = _find_free_port()
+    server_url = f"http://localhost:{server_port}"
     env = os.environ.copy()
-    env["NICEGUI_SCREEN_TEST_PORT"] = str(SERVER_PORT)
+    env["NICEGUI_SCREEN_TEST_PORT"] = str(server_port)
+    env["PORT"] = str(server_port)
     proc = subprocess.Popen(
         [sys.executable, "-m", "deadlock_sim.ui.gui"],
         cwd=str(_PROJECT_ROOT),
         env=env,
     )
-    if not wait_for_server(SERVER_URL):
+    if not wait_for_server(server_url):
         proc.terminate()
         raise RuntimeError("GUI server did not start in time")
-    yield SERVER_URL
+    yield server_url
     proc.terminate()
     proc.wait(timeout=10)
+    _terminate_gui_processes()
 
 
 def _find_chromium() -> str | None:

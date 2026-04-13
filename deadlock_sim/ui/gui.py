@@ -27,7 +27,7 @@ from ..engine.damage import DamageCalculator
 from ..engine.simulation import CombatSimulator, SimConfig, SimResult, SimSettings
 from ..models import Build, HeroStats, Item
 
-# ── Shared read-only data (loaded once, safe for all clients) ─────
+# â”€â”€ Shared read-only data (loaded once, safe for all clients) â”€â”€â”€â”€â”€
 
 _heroes: dict[str, HeroStats] = {}
 _hero_names: list[str] = []
@@ -124,7 +124,7 @@ class _PageState:
             ))
         return schedule
 
-# Mapping from stat field name → conditional category key in state.sim_settings
+# Mapping from stat field name â†’ conditional category key in state.sim_settings
 _COND_CATEGORY_MAP: dict[str, str] = {
     "bullet_resist_shred": "cond_shred",
     "spirit_resist_shred": "cond_shred",
@@ -149,7 +149,7 @@ _COND_CATEGORY_MAP: dict[str, str] = {
 
 
 
-# ── Image mapping ─────────────────────────────────────────────────
+# â”€â”€ Image mapping â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 _ITEM_IMAGE: dict[str, str] = {
     "Active Reload": "fast_reload.png",
@@ -316,7 +316,7 @@ _CAT_COLORS = {
 
 _TIER_COSTS = {1: 500, 2: 1250, 3: 3000, 4: 6200}
 
-# Sort criteria available for items (static — no hero context needed)
+# Sort criteria available for items (static â€” no hero context needed)
 _SORT_OPTIONS = {
     "Cost": lambda item: item.cost,
     "Name": lambda item: item.name,
@@ -337,23 +337,23 @@ _SORT_OPTIONS = {
     "Spirit Amp %": lambda item: -item.spirit_amp_pct,
 }
 
-# Impact sorts — computed per-hero/boon context; mapped to the score dict key
+# Impact sorts â€” computed per-hero/boon context; mapped to the score dict key
 _IMPACT_SORT_KEYS: dict[str, str] = {
-    "★ Gun DPS Δ":      "dps_delta",
-    "★ Spirit DPS Δ":   "spirit_delta",
-    "★ EHP Δ":          "ehp_delta",
-    "★ DPS / Soul":     "dps_per_soul",
-    "★ EHP / Soul":     "ehp_per_soul",
+    "â˜… Gun DPS Î”":      "dps_delta",
+    "â˜… Spirit DPS Î”":   "spirit_delta",
+    "â˜… EHP Î”":          "ehp_delta",
+    "â˜… DPS / Soul":     "dps_per_soul",
+    "â˜… EHP / Soul":     "ehp_per_soul",
 }
 
 # Simulation-based impact sorts
 _SIM_SORT_KEYS: dict[str, tuple[str, str]] = {
-    "⚔ Sim Gun DPS Δ":     ("sim_dps_delta", "gun"),
-    "⚔ Sim Spirit DPS Δ":  ("sim_dps_delta", "spirit"),
-    "⚔ Sim Hybrid DPS Δ":  ("sim_dps_delta", "hybrid"),
-    "⚔ Sim EHP Δ":         ("sim_ehp_delta", "gun"),
-    "⚔ Sim DPS/Soul":      ("sim_dps_per_soul", "gun"),
-    "⚔ Sim EHP/Soul":      ("sim_ehp_per_soul", "gun"),
+    "âš” Sim Gun DPS Î”":     ("sim_dps_delta", "gun"),
+    "âš” Sim Spirit DPS Î”":  ("sim_dps_delta", "spirit"),
+    "âš” Sim Hybrid DPS Î”":  ("sim_dps_delta", "hybrid"),
+    "âš” Sim EHP Î”":         ("sim_ehp_delta", "gun"),
+    "âš” Sim DPS/Soul":      ("sim_dps_per_soul", "gun"),
+    "âš” Sim EHP/Soul":      ("sim_ehp_per_soul", "gun"),
 }
 
 # Color palette for multi-hero scaling charts
@@ -387,7 +387,7 @@ _UTILITY_ITEMS: list[tuple[str, str]] = [
 ]
 
 
-# ── Helpers ───────────────────────────────────────────────────────
+# â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 def _compute_ehp(
@@ -634,10 +634,10 @@ def _build_tooltip_html(item: Item) -> str:
     return html
 
 
-# ── Custom CSS ────────────────────────────────────────────────────
+# â”€â”€ Custom CSS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 _CUSTOM_CSS = """
-/* ── Item card (shop) ───────────────────────────────────────── */
+/* â”€â”€ Item card (shop) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .item-card {
     position: relative;
     width: 88px;
@@ -694,24 +694,54 @@ _CUSTOM_CSS = """
     display: inline-flex;
     flex-direction: column;
     align-items: center;
+    width: 104px;
+    gap: 4px;
 }
 .dl-card-wrapper dl-item-card {
     display: block;
+    width: 96px;
 }
 .dl-score-badge {
-    font-size: 9px; font-weight: 700;
+    font-size: 10px; font-weight: 700;
     text-align: center; line-height: 1.2;
     background: rgba(0,0,0,0.75);
-    padding: 1px 4px;
-    border-radius: 3px;
+    padding: 2px 6px;
+    border-radius: 4px;
     white-space: nowrap;
-    margin-top: -2px;
+    margin-top: -1px;
+    font-variant-numeric: tabular-nums;
+}
+.dl-score-metrics {
+    width: 100%;
+    display: grid;
+    gap: 3px;
+}
+.dl-score-metric {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    padding: 2px 5px;
+    border-radius: 4px;
+    background: rgba(0,0,0,0.42);
+    line-height: 1.1;
+}
+.dl-score-metric-label {
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: #a0a0a0;
+}
+.dl-score-metric-value {
+    font-size: 10px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
 }
 
-/* ── Shop layout ─────────────────────────────────────────────── */
+/* â”€â”€ Shop layout â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .shop-card-grid {
     display: flex; flex-wrap: wrap;
-    gap: 2px; padding: 4px 0 6px;
+    gap: 6px; padding: 4px 0 10px;
     align-items: flex-start;
     overflow: visible;
 }
@@ -731,7 +761,7 @@ _CUSTOM_CSS = """
     display: inline-block;
 }
 
-/* ── Vertical category tabs ──────────────────────────────────── */
+/* â”€â”€ Vertical category tabs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .cat-vtab-bar {
     display: flex; flex-direction: column;
     gap: 3px;
@@ -753,7 +783,7 @@ _CUSTOM_CSS = """
 }
 .cat-vtab:hover { background: rgba(255,255,255,0.1); }
 
-/* ── Build slot grid ─────────────────────────────────────────── */
+/* â”€â”€ Build slot grid â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .build-slots-grid {
     display: grid;
     grid-template-columns: repeat(4, 60px);
@@ -785,7 +815,7 @@ _CUSTOM_CSS = """
     border-radius: 0 0 5px 5px;
 }
 
-/* ── Stat rows in results panel ──────────────────────────────── */
+/* â”€â”€ Stat rows in results panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .stat-row {
     display: flex; align-items: baseline;
     padding: 1px 2px; gap: 4px;
@@ -803,7 +833,7 @@ _CUSTOM_CSS = """
 .stat-row-bonus { color: #7aff7a; font-size: 10px; text-align: right; white-space: nowrap; flex-shrink: 0; }
 .stat-row-perk  { color: #555; font-size: 9px; text-align: right; white-space: nowrap; flex-shrink: 0; }
 
-/* ── Legacy chip (optimizer tab) ─────────────────────────────── */
+/* â”€â”€ Legacy chip (optimizer tab) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .build-item-chip {
     display: flex; align-items: center;
     gap: 6px; padding: 4px 8px;
@@ -819,7 +849,7 @@ _CUSTOM_CSS = """
     margin: 2px;
 }
 
-/* ── Build Lab: section headers ──────────────────────────────── */
+/* â”€â”€ Build Lab: section headers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .bl-section-header {
     font-size: 10px; font-weight: 700; letter-spacing: 0.12em;
     color: #555; text-transform: uppercase;
@@ -827,7 +857,7 @@ _CUSTOM_CSS = """
     border-bottom: 1px solid #1e1e1e;
 }
 
-/* ── Build Lab: hero summary ─────────────────────────────────── */
+/* â”€â”€ Build Lab: hero summary â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .bl-hero-summary {
     display: flex; align-items: center;
     gap: 8px; padding: 6px 0 4px; flex-wrap: wrap;
@@ -842,7 +872,7 @@ _CUSTOM_CSS = """
 }
 .bl-ability-icons { display: flex; gap: 4px; }
 
-/* ── Build Lab: ability progression grid ─────────────────────── */
+/* â”€â”€ Build Lab: ability progression grid â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .bl-prog-grid {
     display: flex; flex-direction: column; gap: 3px; padding: 4px 0;
 }
@@ -857,16 +887,16 @@ _CUSTOM_CSS = """
     border: 1px solid #252525; background: rgba(255,255,255,0.03); flex-shrink: 0;
 }
 
-/* ── Build Lab: item slots 6-wide ────────────────────────────── */
+/* â”€â”€ Build Lab: item slots 6-wide â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .bl-item-grid {
     display: grid;
-    grid-template-columns: repeat(6, 48px);
-    grid-auto-rows: 48px;
-    gap: 4px; padding: 4px 0;
+    grid-template-columns: repeat(6, 56px);
+    grid-auto-rows: 56px;
+    gap: 6px; padding: 6px 0;
     overflow: visible;
 }
 .bl-slot-empty {
-    width: 48px; height: 48px;
+    width: 56px; height: 56px;
     border: 2px dashed #252525; border-radius: 6px;
     background: rgba(255,255,255,0.015);
 }
@@ -874,7 +904,7 @@ _CUSTOM_CSS = """
     border-color: #333344; background: rgba(100,80,180,0.04);
 }
 .bl-slot-filled {
-    position: relative; width: 48px; height: 48px;
+    position: relative; width: 56px; height: 56px;
     border-radius: 6px; cursor: pointer; border: 2px solid;
     display: flex; align-items: center; justify-content: center;
     overflow: hidden; transition: filter 0.1s;
@@ -882,23 +912,23 @@ _CUSTOM_CSS = """
 .bl-slot-filled:hover { filter: brightness(1.4); }
 .bl-slot-filled.dl-build-slot {
     overflow: visible; border: none; background: none;
-    width: 48px; height: 48px;
+    width: 56px; height: 56px;
     display: flex; align-items: flex-start; justify-content: center;
 }
 .bl-slot-filled.dl-build-slot dl-item-card {
-    width: 73px;
-    transform: scale(0.55);
+    width: 80px;
+    transform: scale(0.72);
     transform-origin: top center;
 }
 .bl-slot-cost {
     position: absolute; bottom: 0; left: 0; right: 0;
     background: rgba(0,0,0,0.78);
-    font-size: 8px; text-align: center;
-    padding: 1px 0; line-height: 1.3;
+    font-size: 9px; text-align: center;
+    padding: 2px 0 1px; line-height: 1.3;
     border-radius: 0 0 4px 4px;
 }
 
-/* ── Build Lab: shop bonus bars ──────────────────────────────── */
+/* â”€â”€ Build Lab: shop bonus bars â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .bl-bars-row {
     display: flex; gap: 6px; align-items: flex-end; padding: 6px 0 2px;
 }
@@ -917,7 +947,7 @@ _CUSTOM_CSS = """
 }
 .bl-bar-value { font-size: 10px; font-weight: 700; }
 
-/* ── Build Lab: total souls bar ──────────────────────────────── */
+/* â”€â”€ Build Lab: total souls bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .bl-souls-bar-wrap { padding: 4px 0 6px; }
 .bl-souls-track {
     width: 100%; height: 14px; position: relative;
@@ -933,7 +963,7 @@ _CUSTOM_CSS = """
     text-align: center; margin-top: 3px;
 }
 
-/* ── Saved Builds tab ────────────────────────────────────────── */
+/* â”€â”€ Saved Builds tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .sb-card {
     background: #111120; border: 1px solid #2a2a4a; border-radius: 10px;
     padding: 14px 16px; width: 320px;
@@ -980,10 +1010,40 @@ _CUSTOM_CSS = """
 def _fmt_impact(val: float, sort_name: str, suffix: str) -> float | None:
     """Convert a raw impact score to a display float for item card badges."""
     if "Soul" in sort_name:
-        val = val * 1000  # convert per-soul → per-1000-souls
+        val = val * 1000  # convert per-soul â†’ per-1000-souls
     if abs(val) < 0.01:
         return None
     return val
+
+
+def _score_card_metrics(score_detail: dict | None) -> list[tuple[str, str, str]]:
+    """Return compact score metrics for visible shop card badges."""
+    if not score_detail:
+        return []
+
+    metric_defs = [
+        ("dps_delta", "Gun", "#e8a838", 0.05, False),
+        ("spirit_delta", "Spirit", "#c090f0", 0.05, False),
+        ("ehp_delta", "EHP", "#90a8f0", 0.5, False),
+        ("sim_dps_delta", "DPS", "#e8a838", 0.05, False),
+        ("sim_ehp_delta", "EHP", "#90a8f0", 0.5, False),
+        ("dps_per_soul", "DPS/k", "#e8a838", 0.0005, True),
+        ("ehp_per_soul", "EHP/k", "#90a8f0", 0.0005, True),
+        ("sim_dps_per_soul", "DPS/k", "#e8a838", 0.0005, True),
+        ("sim_ehp_per_soul", "EHP/k", "#90a8f0", 0.0005, True),
+    ]
+
+    metrics: list[tuple[str, str, str]] = []
+    for key, label, color, threshold, per_k in metric_defs:
+        raw_val = score_detail.get(key)
+        if raw_val is None or abs(raw_val) < threshold:
+            continue
+        display_val = raw_val * 1000 if per_k else raw_val
+        sign = "+" if display_val > 0 else ""
+        metrics.append((label, f"{sign}{display_val:.1f}", color))
+        if len(metrics) == 3:
+            break
+    return metrics
 
 
 def _render_item_card(
@@ -992,32 +1052,51 @@ def _render_item_card(
     score: float | None = None,
     score_suffix: str = "",
     score_detail: dict | None = None,
+    primary_metric_label: str | None = None,
 ) -> ui.element:
     """Render a shop item using the deadlock-ui ``<dl-item-card>`` web component.
 
     The web component (Shadow DOM) provides the game-accurate card visual:
     item image, category colour, tier badge, and rich tooltip.
-    Our wrapper adds: click handler, score overlay badge.
+    Our wrapper adds: click handler, score overlay badge, and visible metrics.
     """
     wrapper = (
         ui.element("div")
         .classes("dl-card-wrapper")
         .on("click", lambda _, it=item: on_click_fn(it))
     )
+    metrics = _score_card_metrics(score_detail)
     with wrapper:
         ui.element('dl-item-card').props(
             f'class-name="{item.class_name}" hover-effect="scale"'
         )
-        # Score badge below the card (when sorting by impact / sim metrics)
         if score is not None:
             sign = "+" if score > 0 else ""
             badge_color = "#4fc3f7" if score > 0 else "#ef5350"
             ui.label(f"{sign}{score:.1f}{score_suffix}").classes(
                 "dl-score-badge"
             ).style(f"color:{badge_color};")
+            visible_metrics = metrics or [
+                (primary_metric_label or "Score", f"{sign}{score:.1f}{score_suffix}", badge_color)
+            ]
+            with ui.element("div").classes("dl-score-metrics"):
+                for label, value, color in visible_metrics:
+                    with ui.element("div").classes("dl-score-metric"):
+                        ui.label(label).classes("dl-score-metric-label")
+                        ui.label(value).classes("dl-score-metric-value").style(
+                            f"color:{color};"
+                        )
+        elif metrics:
+            with ui.element("div").classes("dl-score-metrics"):
+                for label, value, color in metrics:
+                    with ui.element("div").classes("dl-score-metric"):
+                        ui.label(label).classes("dl-score-metric-label")
+                        ui.label(value).classes("dl-score-metric-value").style(
+                            f"color:{color};"
+                        )
     return wrapper
 
-# ── Tab: Hero Stats ──────────────────────────────────────────────
+# â”€â”€ Tab: Hero Stats â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 def _build_hero_stats_tab() -> None:
@@ -1054,7 +1133,7 @@ def _build_hero_stats_tab() -> None:
                     _scaling_badges = []
                     if hero.scaling_stats:
                         for s in hero.scaling_stats:
-                            _scaling_badges.append(f"{s.target_stat} ← {s.source_stat}")
+                            _scaling_badges.append(f"{s.target_stat} â† {s.source_stat}")
                     if hero.bullet_resist_gain:
                         _scaling_badges.append(f"Bullet Resist / Boon")
                     if hero.spirit_resist_gain:
@@ -1196,7 +1275,7 @@ def _build_hero_stats_tab() -> None:
                                         for u in ability.upgrades
                                     )
                                     with ui.element("span").style("cursor:help; display:inline-block;"):
-                                        ui.label("Upgrades ▸").classes("text-purple-400 text-xs underline")
+                                        ui.label("Upgrades â–¸").classes("text-purple-400 text-xs underline")
                                         with ui.tooltip().style(
                                             "background:#2a1a3d; border:1px solid #9c5dce; "
                                             "padding:8px 12px; border-radius:6px; max-width:420px;"
@@ -1206,14 +1285,14 @@ def _build_hero_stats_tab() -> None:
     hero_select.on_value_change(update)
     update()
 
-# ── Tab: Build Lab ────────────────────────────────────────────────
+# â”€â”€ Tab: Build Lab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 _CAT_TAB_DEFS = [
     # (value, emoji, label, border_color, active_bg, text_color)
-    ("all",      "✦", "All",      "#888888", "#444444", "#ffffff"),
-    ("weapon",   "⚙", "Weapon",   "#e8a838", "#3a2200", "#e8a838"),
+    ("all",      "âœ¦", "All",      "#888888", "#444444", "#ffffff"),
+    ("weapon",   "âš™", "Weapon",   "#e8a838", "#3a2200", "#e8a838"),
     ("vitality", "+", "Vitality", "#68b45c", "#0e2a08", "#68b45c"),
-    ("spirit",   "✸", "Spirit",   "#9b74d4", "#1a0d38", "#c090f0"),
+    ("spirit",   "âœ¸", "Spirit",   "#9b74d4", "#1a0d38", "#c090f0"),
 ]
 
 _TIER_COSTS_LABEL = {1: "500", 2: "1,250", 3: "3,000", 4: "6,200"}
@@ -1235,7 +1314,7 @@ _SHOP_BONUS_THRESHOLDS: list[tuple[int, int, int, int]] = [
 _SHOP_BONUS_MAX_SOULS = 28800
 
 
-# ── Build Lab HTML renderers (return pure HTML strings) ───────────
+# â”€â”€ Build Lab HTML renderers (return pure HTML strings) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 def _render_hero_summary_html(hero: "HeroStats | None") -> str:
@@ -1352,13 +1431,13 @@ def _render_hero_summary_with_tooltips(hero: "HeroStats | None") -> None:
 
 
 def _render_ability_prog_html(hero: "HeroStats | None") -> str:
-    """4 rows × 16 columns of empty ability-level boxes."""
+    """4 rows Ã— 16 columns of empty ability-level boxes."""
     COLS = 16
     abilities = [a for a in (hero.abilities if hero else []) if a.name][:4]
     rows_html = ""
     for row_idx in range(4):
         ab = abilities[row_idx] if row_idx < len(abilities) else None
-        label = (ab.name[:5] if ab else "—")
+        label = (ab.name[:5] if ab else "â€”")
         title = (ab.name if ab else "")
         if ab:
             atype = (ab.ability_type or "").lower()
@@ -1381,18 +1460,18 @@ def _render_ability_prog_html(hero: "HeroStats | None") -> str:
 def _build_eval_tab(state: _PageState) -> None:
     all_sort_options = list(_SORT_OPTIONS.keys()) + list(_IMPACT_SORT_KEYS.keys()) + list(_SIM_SORT_KEYS.keys())
     cat_state = {"value": "all"}
-    _card_refs: dict[str, ui.element] = {}  # item-name → card element for targeted removal
+    _card_refs: dict[str, ui.element] = {}  # item-name â†’ card element for targeted removal
 
-    # ── Main two-column layout ────────────────────────────────────
+    # â”€â”€ Main two-column layout â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     with ui.row().classes("w-full gap-0 items-start").style("min-height: 660px;"):
 
-        # ══ LEFT: Build panel (three sections) ════════════════════
+        # â•â• LEFT: Build panel (three sections) â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
         with ui.column().style(
             "width:380px; min-width:340px; padding:0 12px 8px 0;"
             "border-right:1px solid #1e1e1e; gap:0;"
         ):
 
-            # ── Section 1: HERO & ABILITY PROGRESSION ─────────────
+            # â”€â”€ Section 1: HERO & ABILITY PROGRESSION â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             ui.element("div").classes("bl-section-header").text = "HERO & ABILITY PROGRESSION"
 
             with ui.row().classes("items-end gap-2 flex-wrap"):
@@ -1419,7 +1498,7 @@ def _build_eval_tab(state: _PageState) -> None:
 
             ui.separator().style("margin:8px 0 4px;")
 
-            # ── Section 2: PURCHASED ITEMS & BONUSES ──────────────
+            # â”€â”€ Section 2: PURCHASED ITEMS & BONUSES â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             ui.element("div").classes("bl-section-header").text = "PURCHASED ITEMS & BONUSES"
 
             build_grid       = ui.element("div").classes("bl-item-grid")
@@ -1443,12 +1522,12 @@ def _build_eval_tab(state: _PageState) -> None:
 
             ui.separator().style("margin:8px 0 4px;")
 
-            # ── Section 3: CALCULATED HERO STATS ──────────────────
+            # â”€â”€ Section 3: CALCULATED HERO STATS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             ui.element("div").classes("bl-section-header").text = "CALCULATED HERO STATS"
 
             stats_all = ui.column().classes("w-full gap-0")
 
-        # ══ RIGHT: Filter bar + vertical cat tabs + shop ══════════
+        # â•â• RIGHT: Filter bar + vertical cat tabs + shop â•â•â•â•â•â•â•â•â•â•
         with ui.column().classes("flex-grow gap-0").style("min-width:0; overflow:hidden;"):
 
             # Filter bar
@@ -1485,9 +1564,9 @@ def _build_eval_tab(state: _PageState) -> None:
 
             ui.separator().style("margin:2px 0;")
 
-            shop_score_area = ui.element("div").classes("w-full")
+            shop_score_area = ui.element("div").classes("w-full").style("flex:1 1 auto; min-height:0;")
             with shop_score_area:
-              with ui.row().classes("w-full gap-0 items-start").style("min-width:0; flex:1 1 0;"):
+              with ui.row().classes("w-full gap-0 items-start").style("min-width:0; flex:1 1 0; min-height:0;"):
 
                 # Vertical category tab strip
                 with ui.column().classes("cat-vtab-bar"):
@@ -1535,7 +1614,7 @@ def _build_eval_tab(state: _PageState) -> None:
 
                 # Shop scroll area
                 shop_container = ui.scroll_area().classes("border-l rounded-r").style(
-                    "background:#0d0d16; height:620px; min-width:0; flex:1 1 0;"
+                    "background:#0d0d16; min-width:0; flex:1 1 auto; min-height:0; align-self:stretch;"
                 )
 
             # Browse-only shop panel (hidden by default)
@@ -1546,7 +1625,7 @@ def _build_eval_tab(state: _PageState) -> None:
                     'hover-effect="scale"'
                 ).style("width:100%; height:640px; overflow-y:auto; display:block;")
 
-    # ── Inner functions ───────────────────────────────────────────
+    # â”€â”€ Inner functions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     def _ehp(hero, boons, stats):
         """Compute EHP with resistances, shields, and vitality investment."""
@@ -1734,9 +1813,11 @@ def _build_eval_tab(state: _PageState) -> None:
                                             sort_name, score_suffix
                                         ) if (is_scored and sc) else None
                                         # Use sim scores when available, otherwise impact scores
-                                        detail = sc if is_sim else impact_scores.get(item.name)
+                                        detail = sc or impact_scores.get(item.name)
+                                        primary_label = _primary_score_label(sort_name) if is_scored else None
+                                        primary_label = _primary_score_label(sort_name) if is_scored else None
                                         _card_refs[item.name] = _render_item_card(item, add_item, score=sv, score_suffix=score_suffix,
-                                                         score_detail=detail)
+                                                         score_detail=detail, primary_metric_label=primary_label)
                 else:
                     with ui.element("div").classes("shop-card-grid"):
                         for item in filtered:
@@ -1745,12 +1826,27 @@ def _build_eval_tab(state: _PageState) -> None:
                                 sc.get(active_score_key, 0) if sc else 0,
                                 sort_name, score_suffix
                             ) if (is_scored and sc) else None
-                            detail = sc if is_sim else impact_scores.get(item.name)
+                            detail = sc or impact_scores.get(item.name)
+                            primary_label = _primary_score_label(sort_name) if is_scored else None
+                            primary_label = _primary_score_label(sort_name) if is_scored else None
                             _card_refs[item.name] = _render_item_card(item, add_item, score=sv, score_suffix=score_suffix,
-                                             score_detail=detail)
+                                             score_detail=detail, primary_metric_label=primary_label)
 
     def _is_dynamic_sort():
         return sort_select.value in _IMPACT_SORT_KEYS or sort_select.value in _SIM_SORT_KEYS
+
+    def _primary_score_label(sort_value: str) -> str | None:
+        if not sort_value:
+            return None
+        if "EHP" in sort_value:
+            return "EHP/k" if "Soul" in sort_value else "EHP"
+        if "Spirit" in sort_value:
+            return "Spirit"
+        if "Hybrid DPS" in sort_value:
+            return "DPS"
+        if "DPS" in sort_value:
+            return "DPS/k" if "Soul" in sort_value or "/ Soul" in sort_value else "Gun"
+        return None
 
     def add_item(item: Item):
         if any(i.name == item.name for i in state.build_items):
@@ -1759,7 +1855,7 @@ def _build_eval_tab(state: _PageState) -> None:
         state.build_boons = _current_boons()
         refresh_build_display()
         update_results()
-        # When using dynamic scoring, item scores all change — full refresh needed.
+        # When using dynamic scoring, item scores all change â€” full refresh needed.
         # Otherwise just remove the purchased card to avoid icon flash.
         if _is_dynamic_sort():
             refresh_shop()
@@ -1872,7 +1968,7 @@ def _build_eval_tab(state: _PageState) -> None:
 
     save_build_btn.on_click(save_current_build)
 
-    # ── Import Build from Screenshot ──────────────────────────────
+    # â”€â”€ Import Build from Screenshot â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     _SCREENCAP_JS = """
     async function captureGameScreen() {
@@ -2080,10 +2176,10 @@ def _build_eval_tab(state: _PageState) -> None:
                 ui.label(f"{total_souls:,} Souls").style(
                     "color:#e8c252;font-size:12px;font-weight:700;"
                 )
-                ui.label(f"⬥ {boons_val} Boons").style(
+                ui.label(f"â¬¥ {boons_val} Boons").style(
                     "color:#c090f0;font-size:11px;"
                 )
-                ui.label(f"⬥ AP: {ap_remaining}/{ap_total}").style(
+                ui.label(f"â¬¥ AP: {ap_remaining}/{ap_total}").style(
                     "color:#68d4a8;font-size:11px;"
                 )
 
@@ -2092,7 +2188,7 @@ def _build_eval_tab(state: _PageState) -> None:
         with hero_summary_area:
             _render_hero_summary_with_tooltips(hero)
 
-        # ── Ability upgrade allocation ────────────────────────────
+        # â”€â”€ Ability upgrade allocation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         ability_upgrade_area.clear()
         with ability_upgrade_area:
             if hero and hero.abilities:
@@ -2217,7 +2313,7 @@ def _build_eval_tab(state: _PageState) -> None:
                                     status = "Active" if is_active else f"{tier_cost} AP" if can_buy else f"Locked ({tier_cost} AP)"
                                     ui.html(
                                         f'<div style="color:#e8c252;font-weight:bold;margin-bottom:2px;">'
-                                        f'{ab.name} — T{tier_num} ({status})</div>'
+                                        f'{ab.name} â€” T{tier_num} ({status})</div>'
                                         f'<div style="color:#d0d0d0;">{desc_text}</div>'
                                         f'{impact_html}'
                                     )
@@ -2233,7 +2329,7 @@ def _build_eval_tab(state: _PageState) -> None:
 
             # Set column-major flow with explicit row count
             build_grid.style(
-                f"grid-template-rows: repeat({num_rows}, 48px); "
+                f"grid-template-rows: repeat({num_rows}, 56px); "
                 f"grid-auto-flow: column;"
             )
 
@@ -2387,7 +2483,7 @@ def _build_eval_tab(state: _PageState) -> None:
             return delta / total_souls * 1000
 
         with stats_all:
-            # ── Summary header ───────────────────────────────────
+            # â”€â”€ Summary header â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             with ui.element("div").style(
                 "background:#111120; border:1px solid #2a2a4a; border-radius:8px;"
                 "padding:8px 10px; margin-bottom:6px;"
@@ -2409,11 +2505,11 @@ def _build_eval_tab(state: _PageState) -> None:
                             if pk_val is not None and abs(pk_val) >= 0.05:
                                 ui.label(f"{pk_val:.1f}/k").style("font-size:9px; color:#555;")
 
-            # ── Horizontal stat columns ──────────────────────────
+            # â”€â”€ Horizontal stat columns â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             with ui.row().classes("w-full").style(
                 "align-items:flex-start; gap:0;"
             ):
-                # ── Weapon column ────────────────────────────────
+                # â”€â”€ Weapon column â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                 weapon_col = ui.column().classes("gap-0").style(
                     "flex:1; min-width:0;"
                     "border-right:1px solid rgba(255,255,255,0.08); padding-right:6px; margin-right:6px;"
@@ -2472,7 +2568,7 @@ def _build_eval_tab(state: _PageState) -> None:
                     with weapon_col:
                         ui.label("No gun data").style("color:#555; font-size:10px; padding:2px 8px;")
 
-                # ── Vitality column ──────────────────────────────
+                # â”€â”€ Vitality column â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                 vitality_col = ui.column().classes("gap-0").style(
                     "flex:1; min-width:0;"
                     "border-right:1px solid rgba(255,255,255,0.08); padding-right:6px; margin-right:6px;"
@@ -2535,7 +2631,7 @@ def _build_eval_tab(state: _PageState) -> None:
                               breakdown=_bd("spirit_resist_pct"), fmt="pct",
                               per_k=pk(bs.spirit_resist_pct))
 
-                # ── Spirit column ────────────────────────────────
+                # â”€â”€ Spirit column â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                 spirit_col = ui.column().classes("gap-0").style(
                     "flex:1; min-width:0;"
                 )
@@ -2585,7 +2681,7 @@ def _build_eval_tab(state: _PageState) -> None:
                     f"{spirit_dps:.1f}" if spirit_dps > 0 else "-",
                     per_k=pk(spirit_dps_delta))
 
-            # ── Footer: Combined DPS + Total Cost ────────────────
+            # â”€â”€ Footer: Combined DPS + Total Cost â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             ui.separator().style("margin:4px 0;")
             combo_bd: list[tuple[str, float]] = []
             if bullet_dps > 0:
@@ -2600,7 +2696,7 @@ def _build_eval_tab(state: _PageState) -> None:
             _stat_row(stats_all, "Total Cost", f"${bs.total_cost:,}",
                       breakdown=cost_bd or None, fmt="int")
 
-    # ── Event wiring ──────────────────────────────────────────────
+    # â”€â”€ Event wiring â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     def _on_hero_boons(_=None):
         state.build_hero_name = bld_hero.value or ""
         state.build_boons = _current_boons()
@@ -2661,7 +2757,7 @@ def _build_eval_tab(state: _PageState) -> None:
     return refresh_shop, load_build_from_saved
 
 
-# ── Tab: Saved Builds ────────────────────────────────────────────
+# â”€â”€ Tab: Saved Builds â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 _LOCALSTORAGE_KEY = "deadlocksim_saved_builds"
 
@@ -2867,7 +2963,7 @@ def _build_settings_tab(state: _PageState) -> None:
     """
     with ui.row().classes("w-full gap-8 items-start").style("min-height: 600px;"):
 
-        # ══ Column 1: Combat Settings ════════════════════════════
+        # â•â• Column 1: Combat Settings â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
         with ui.column().classes("gap-0").style("width:320px;"):
             ui.element("div").classes("bl-section-header").text = "COMBAT SETTINGS"
 
@@ -2953,7 +3049,7 @@ def _build_settings_tab(state: _PageState) -> None:
                     value=state.sim_settings["cond_sustain"],
                 )
 
-        # ══ Column 2: Ability Configuration ══════════════════════
+        # â•â• Column 2: Ability Configuration â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
         with ui.column().classes("gap-0").style("width:320px;"):
             ui.element("div").classes("bl-section-header").text = "ABILITY CONFIGURATION"
 
@@ -3070,7 +3166,7 @@ def _build_settings_tab(state: _PageState) -> None:
             ability_hero_select.on_value_change(_refresh_ability_config)
             _refresh_ability_config()
 
-        # ══ Column 3: Custom Item Values ═════════════════════════
+        # â•â• Column 3: Custom Item Values â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
         with ui.column().classes("gap-0").style("width:380px;"):
             ui.element("div").classes("bl-section-header").text = "CUSTOM ITEM VALUES"
 
@@ -3131,7 +3227,7 @@ def _build_settings_tab(state: _PageState) -> None:
                         on_change=make_ehp_handler(item_name),
                     ).classes("w-16").props("dense")
 
-    # ── Save settings to global state on any change ──────────────
+    # â”€â”€ Save settings to global state on any change â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     def _save_setting(key: str, divisor: float = 1.0):
         def handler(e):
             state.sim_settings[key] = (float(e.value or 0)) / divisor
@@ -3162,7 +3258,7 @@ def _build_settings_tab(state: _PageState) -> None:
 
 
 
-# ── Tab: Simulation ─────────────────────────────────────────────
+# â”€â”€ Tab: Simulation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 def _build_simulation_tab(state: _PageState) -> None:
@@ -3175,12 +3271,12 @@ def _build_simulation_tab(state: _PageState) -> None:
 
     with ui.row().classes("w-full gap-6 items-start").style("min-height: 660px;"):
 
-        # ══ LEFT: Configuration panel ════════════════════════════
+        # â•â• LEFT: Configuration panel â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
         with ui.column().style(
             "width:360px; min-width:320px; padding:0 12px 8px 0;"
             "border-right:1px solid #1e1e1e; gap:0;"
         ):
-            # ── Attacker (from Build tab) ────────────────────────
+            # â”€â”€ Attacker (from Build tab) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             ui.element("div").classes("bl-section-header").text = "ATTACKER (FROM BUILD TAB)"
             sim_atk_summary = ui.column().classes("w-full gap-1")
 
@@ -3220,7 +3316,7 @@ def _build_simulation_tab(state: _PageState) -> None:
 
             ui.separator().style("margin:8px 0;")
 
-            # ── Defender config ──────────────────────────────────
+            # â”€â”€ Defender config â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             ui.element("div").classes("bl-section-header").text = "DEFENDER"
             with ui.row().classes("items-end gap-2 flex-wrap"):
                 sim_def_hero = ui.select(
@@ -3249,7 +3345,7 @@ def _build_simulation_tab(state: _PageState) -> None:
 
             ui.separator().style("margin:8px 0;")
 
-            # ── Settings reference ───────────────────────────────
+            # â”€â”€ Settings reference â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             with ui.element("div").style(
                 "background:#111820; border:1px solid #2a3a4a; border-radius:6px;"
                 "padding:8px 10px;"
@@ -3280,12 +3376,12 @@ def _build_simulation_tab(state: _PageState) -> None:
                 "w-full"
             ).style("background:#1a5a1a; color:#fff;")
 
-        # ══ RIGHT: Results panel ═════════════════════════════════
+        # â•â• RIGHT: Results panel â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
         with ui.column().classes("flex-grow gap-0").style("min-width:0; overflow:hidden;"):
             ui.element("div").classes("bl-section-header").text = "SIMULATION RESULTS"
             sim_results_area = ui.column().classes("w-full gap-4")
 
-    # ── Helper functions ─────────────────────────────────────────
+    # â”€â”€ Helper functions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     def _render_def_grid():
         sim_def_grid.clear()
@@ -3368,14 +3464,14 @@ def _build_simulation_tab(state: _PageState) -> None:
         with sim_results_area:
             is_bidir = result.winner is not None or result.defender_dps is not None
 
-            # ── Matchup header ───────────────────────────────────
+            # â”€â”€ Matchup header â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             mode_tag = " [BIDIRECTIONAL]" if is_bidir else ""
             ui.label(
                 f"{atk_hero.name} ({len(state.build_items)} items, {state.build_boons} boons) vs "
                 f"{def_hero.name} ({len(sim_def_items)} items){mode_tag}"
             ).style("color:#e8c252; font-size:12px; font-weight:600; margin-bottom:4px;")
 
-            # ── Winner banner (bidirectional only) ───────────────
+            # â”€â”€ Winner banner (bidirectional only) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             if is_bidir:
                 if result.winner == "a":
                     w_text = f"{atk_hero.name} WINS at {result.kill_time:.2f}s"
@@ -3384,7 +3480,7 @@ def _build_simulation_tab(state: _PageState) -> None:
                     w_text = f"{def_hero.name} WINS at {result.defender_kill_time:.2f}s"
                     w_color = "#ff6b6b"
                 else:
-                    w_text = f"DRAW — neither died in {result.total_duration:.1f}s"
+                    w_text = f"DRAW â€” neither died in {result.total_duration:.1f}s"
                     w_color = "#e8c252"
 
                 with ui.element("div").style(
@@ -3402,7 +3498,7 @@ def _build_simulation_tab(state: _PageState) -> None:
                         "font-size:11px; color:#888; margin-top:2px;"
                     ).text = " | ".join(hp_parts)
 
-            # ── Side-by-side or single view ──────────────────────
+            # â”€â”€ Side-by-side or single view â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             if is_bidir:
                 with ui.row().classes("w-full gap-6 items-start"):
                     with ui.column().classes("flex-grow gap-0").style("flex:1; min-width:0;"):
@@ -3428,7 +3524,7 @@ def _build_simulation_tab(state: _PageState) -> None:
                             result.total_duration, "b",
                         )
             else:
-                # ── Unidirectional (original layout) ──────────────
+                # â”€â”€ Unidirectional (original layout) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                 kill_text = (
                     f"Target killed at {result.kill_time:.2f}s"
                     if result.kill_time is not None
@@ -3462,7 +3558,7 @@ def _build_simulation_tab(state: _PageState) -> None:
                     result.total_duration, "a",
                 )
 
-            # ── DPS Timeline chart ───────────────────────────────
+            # â”€â”€ DPS Timeline chart â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             ui.separator()
             ui.label("DPS Over Time").classes("text-sm font-bold text-sky-400")
 
@@ -3649,7 +3745,7 @@ def _build_simulation_tab(state: _PageState) -> None:
     _refresh_settings_summary()
 
 
-# ── Simulation-based item scoring for Build tab ────────────────
+# â”€â”€ Simulation-based item scoring for Build tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 def _sim_item_scores(
@@ -3750,7 +3846,7 @@ def _sim_item_scores(
     return scores
 
 
-# ── Main entry point ─────────────────────────────────────────────
+# â”€â”€ Main entry point â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 def run_gui() -> None:
@@ -3834,7 +3930,7 @@ def run_gui() -> None:
 
             ui.button("Refresh Data", icon="sync", on_click=do_refresh).props("flat").classes("text-sky-400")
 
-            # ── Bug Report / Suggestion button ────────────────────
+            # â”€â”€ Bug Report / Suggestion button â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             def _open_feedback_dialog():
                 feedback_category = {"value": "Bug"}
                 feedback_text = {"value": ""}
@@ -3924,3 +4020,8 @@ def run_gui() -> None:
 
 if __name__ in {"__main__", "__mp_main__"}:
     run_gui()
+
+
+
+
+
