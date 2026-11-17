@@ -91,7 +91,7 @@ pub const ITEM_IMAGES: &[(&str, &str)] = &[
     ("Mystic Regeneration", "health_regen.png"),
     ("Mystic Reverb", "magic_reverb.png"),
     ("Mystic Shot", "magic_shock.png"),
-    ("Mystic Slow", "slowing_hex.png"),
+    ("Mystic Slow", "slowing_tech.png"),
     ("Mystic Vulnerability", "tech_vulnerability.png"),
     ("Opening Rounds", "detention_rounds.png"),
     ("Phantom Strike", "phantom_strike.png"),

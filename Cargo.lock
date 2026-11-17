@@ -254,11 +254,13 @@ dependencies = [
  "axum",
  "clap",
  "clap_complete",
+ "http-body-util",
  "indexmap",
  "regex",
  "serde",
  "serde_json",
  "tokio",
+ "tower",
  "ureq",
 ]
 

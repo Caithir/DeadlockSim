@@ -9,7 +9,8 @@ use deadlock_sim::engine::components::{add_item, component_closure, purchase_cos
 use deadlock_sim::engine::montecarlo::{monte_carlo_ttk, MonteCarloParams};
 use deadlock_sim::engine::optimizer::{optimize, recommend, Goal, OptimizeParams};
 use deadlock_sim::engine::primitives::falloff_multiplier;
-use deadlock_sim::models::{CombatConfig, Item};
+use deadlock_sim::engine::simulation::{run_simulation, SimConfig, SimResult, SimSettings};
+use deadlock_sim::models::{Build, CombatConfig, Item};
 use deadlock_sim::service::{self, BuildRequest, BuildSpec, Settings};
 use deadlock_sim::share::{self, SharedBuild};
 use deadlock_sim::{mcp, patchnotes, presentation};
@@ -572,4 +573,110 @@ fn saved_patch_names_cannot_escape_the_patch_directory() {
     assert!(patchnotes::load_saved_patch("../../Cargo").is_none());
     assert!(patchnotes::load_saved_patch("").is_none());
     assert!(patchnotes::load_saved_patch("03-25-2026").is_some());
+}
+
+// ── Regressions from the Python bug list ──────────────────────────
+
+fn sim(attacker: &str, atk_items: &[&str], defender: &str, def_items: &[&str], settings: SimSettings) -> SimResult {
+    let d = data();
+    run_simulation(&SimConfig {
+        attacker: d.heroes[attacker].clone(),
+        attacker_build: Build::new(items(atk_items)),
+        defender: d.heroes[defender].clone(),
+        defender_build: Build::new(items(def_items)),
+        settings,
+        ..Default::default()
+    })
+}
+
+fn gun_only() -> SimSettings {
+    SimSettings { ability_uptime: 0.0, melee_after_reload: false, duration: 3.0, ..Default::default() }
+}
+
+#[test]
+fn simulation_applies_spirit_power_percent() {
+    // Boundless Spirit's spirit power % must raise ability damage in the simulation.
+    let d = data();
+    let pct_item =
+        d.items.values().find(|i| i.spirit_power_pct > 0.0).expect("an item with spirit power %").name.clone();
+    let settings =
+        SimSettings { weapon_uptime: 0.0, melee_after_reload: false, attacker_boons: 20, ..Default::default() };
+    let base = sim("Infernus", &["Extra Spirit"], "Abrams", &[], settings.clone());
+    let boosted = sim("Infernus", &["Extra Spirit", &pct_item], "Abrams", &[], settings);
+    assert!(boosted.spirit_damage > base.spirit_damage, "{pct_item} had no effect on spirit damage");
+}
+
+#[test]
+fn simulation_respects_the_per_target_pellet_cap() {
+    // Drifter fires several pellets but only one can hit a single target.
+    let d = data();
+    let drifter = &d.heroes["Drifter"];
+    assert!(drifter.pellets > 1 && drifter.max_pellets_per_target == 1);
+    let r = sim("Drifter", &[], "Abrams", &[], SimSettings { accuracy: 1.0, headshot_rate: 0.0, ..gun_only() });
+    let first = r.timeline.iter().find(|e| &*e.source == "weapon").unwrap();
+    let falloff = falloff_multiplier(20.0, drifter.falloff_range_min, drifter.falloff_range_max);
+    assert!((first.damage - drifter.base_bullet_damage * falloff).abs() < 1e-9, "shot dealt {}", first.damage);
+}
+
+#[test]
+fn kill_time_counts_shields_as_part_of_the_pool() {
+    // Damage absorbed by shields must not count as a kill against bare HP.
+    // No shop item grants an unconditional bullet shield, so use a synthetic one.
+    let d = data();
+    let shield =
+        Item { name: "Test Shield".into(), category: "vitality".into(), bullet_shield: 400.0, ..Default::default() };
+    let settings = SimSettings { accuracy: 1.0, duration: 60.0, ..gun_only() };
+    let run = |def_items: Vec<Item>| {
+        run_simulation(&SimConfig {
+            attacker: d.heroes["Haze"].clone(),
+            defender: d.heroes["Abrams"].clone(),
+            defender_build: Build::new(def_items),
+            settings: settings.clone(),
+            ..Default::default()
+        })
+    };
+    let (bare, shielded) = (run(vec![]), run(vec![shield.clone()]));
+    let (t0, t1) = (bare.kill_time.unwrap(), shielded.kill_time.unwrap());
+    assert!(t1 > t0, "shield did not delay the kill: {t0} vs {t1}");
+    let dealt: f64 = shielded.timeline.iter().filter(|e| e.time <= t1).map(|e| e.damage).sum();
+    let pool = d.heroes["Abrams"].base_hp + 400.0;
+    assert!(dealt >= pool - 1e-6 && shielded.target_hp_remaining == 0.0);
+}
+
+#[test]
+fn simulation_uses_each_heros_headshot_multiplier() {
+    let d = data();
+    let shot = |hero: &str, hs: f64| {
+        let r = sim(hero, &[], "Abrams", &[], SimSettings { accuracy: 1.0, headshot_rate: hs, ..gun_only() });
+        r.timeline.iter().find(|e| &*e.source == "weapon").unwrap().damage
+    };
+    for hero in ["Haze", "Graves", "Drifter"] {
+        let expected = d.heroes[hero].crit_bonus_start;
+        let ratio = shot(hero, 1.0) / shot(hero, 0.0);
+        assert!((ratio - expected).abs() < 1e-9, "{hero}: ratio {ratio}, expected {expected}");
+    }
+}
+
+#[test]
+fn mcp_spirit_dps_includes_spirit_power_percent() {
+    let mut d = data().clone();
+    let pct_item = d.items.values().find(|i| i.spirit_power_pct > 0.0).unwrap().name.clone();
+    let (base, _) =
+        tool(&mut d, "evaluate_build", json!({"hero_name": "Infernus", "item_names": ["Extra Spirit"], "boons": 20}));
+    let (more, _) = tool(
+        &mut d,
+        "evaluate_build",
+        json!({"hero_name": "Infernus", "item_names": ["Extra Spirit", pct_item], "boons": 20}),
+    );
+    assert!(more["spirit_dps"].as_f64().unwrap() > base["spirit_dps"].as_f64().unwrap());
+}
+
+#[test]
+fn every_bundled_fallback_icon_exists() {
+    let dir = deadlock_sim::api_client::data_dir().join("images").join("items");
+    for (name, file) in deadlock_sim::item_images::ITEM_IMAGES {
+        assert!(dir.join(file).exists(), "{name} points at missing icon {file}");
+    }
+    let names: Vec<&str> = deadlock_sim::item_images::ITEM_IMAGES.iter().map(|e| e.0).collect();
+    assert!(names.windows(2).all(|w| w[0] < w[1]), "ITEM_IMAGES must stay sorted for binary search");
 }

@@ -53,7 +53,7 @@ Investing souls in the **Spirit** item category grants cumulative Spirit Power:
 | 28,800         | +81*                 |
 
 > *Note: Some wiki sources list 28,800 as +100. Needs in-game verification.
-> Codebase values shown above match `_SHOP_TIER_DATA` in `data.py`.
+> Codebase values shown above match `SHOP_TIER_DATA` in `src/data.rs`.
 
 ## Spirit Amplification (Spirit Amp)
 

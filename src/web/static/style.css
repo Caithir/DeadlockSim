@@ -1,7 +1,7 @@
 :root {
   color-scheme: dark;
   --bg: #0d0d16; --surface: #14141f; --surface-2: #1b1b2a; --line: #2a2a3e;
-  --text: #e8e8ee; --text-2: #b4b4c4; --muted: #7d7d92;
+  --text: #e8e8ee; --text-2: #b4b4c4; --muted: #8a8aa0;
   --gold: #e8c252; --good: #6bd08a; --bad: #f07a6a;
   --weapon: #f5a623; --weapon-bg: #33240f; --weapon-line: #b8721c;
   --vitality: #6dd56e; --vitality-bg: #162b1b; --vitality-line: #3f9443;
@@ -41,8 +41,8 @@ input[type=number] { width: 90px; }
 label.field { display: inline-flex; flex-direction: column; gap: 2px; font-size: 11px; color: var(--muted); }
 label.check { display: flex; gap: 6px; align-items: center; font-size: 13px; cursor: pointer; }
 
-.card { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
-.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(460px, 1fr)); gap: 14px; align-items: start; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 12px; min-width: 0; overflow-x: auto; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(460px, 100%), 1fr)); gap: 14px; align-items: start; }
 .banner { border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; background: var(--surface); margin-bottom: 10px; }
 .banner.win { border-color: var(--good); } .banner.lose { border-color: var(--bad); }
 .banner strong { font-size: 16px; }
@@ -50,6 +50,13 @@ label.check { display: flex; gap: 6px; align-items: center; font-size: 13px; cur
 /* Build tab */
 .build-layout { display: grid; grid-template-columns: minmax(330px, 400px) 1fr; gap: 16px; align-items: start; }
 @media (max-width: 900px) { .build-layout { grid-template-columns: 1fr; } }
+@media (max-width: 600px) {
+  main { padding: 10px 10px 32px; }
+  .topbar { padding: 8px 10px; }
+  .tiles { grid-template-columns: repeat(2, 1fr); }
+  .cards { grid-template-columns: repeat(auto-fill, minmax(70px, 1fr)); }
+  input[type=search], input[type=text] { max-width: 100%; }
+}
 .infobar { display: flex; gap: 12px; flex-wrap: wrap; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 5px 10px; margin: 8px 0; font-size: 12px; }
 .hero-head { display: flex; gap: 10px; align-items: center; margin: 6px 0; }
 .hero-head img { width: 44px; height: 44px; border-radius: 50%; object-fit: cover; border: 1px solid var(--line); background: var(--surface-2); }

@@ -97,7 +97,11 @@ src/
   patchnotes.rs, share.rs             patch note tooling, build share codes
 tests/
   parity.rs                           replays 2,956 reference cases from the original Python engine
-  features.rs                         components, optimizer, Monte Carlo, service, MCP, patch scraping
+  features.rs                         engine features, service layer, MCP, patch scraping, regressions
+  web_api.rs                          HTTP API, in-process
+  cli.rs                              the binary: arguments, JSON output, interactive menu, MCP stdio
+  e2e/                                browser smoke test (Playwright)
+docs/engine-notes.md                  what is modeled, known limitations, open questions
 docs/mechanics/                       notes on the game mechanics being modeled
 ```
 
@@ -109,11 +113,20 @@ cargo clippy --all-targets
 cargo fmt
 ```
 
+The browser smoke test needs Node and Playwright with Chromium. It builds the server, starts it on a
+spare port and walks through the UI, including undo/redo, share links and a phone-width layout check:
+
+```bash
+tests/e2e/run.sh
+```
+
 Configuration is through environment variables: `PORT`, `HOST`, `DEADLOCKSIM_DATA_DIR` (location of
 the `data/` directory; defaults to `./data`, then next to the executable) and `DEADLOCKSIM_API_URL`
 (alternate API base URL, useful for testing).
 
 ## Modeling notes
+
+See `docs/engine-notes.md` for the full list. In short:
 
 - Accuracy and headshots are expected values everywhere except the Monte Carlo duel.
 - Resistances stack multiplicatively; shred reduces the target's resist proportionally.

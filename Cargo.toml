@@ -29,3 +29,7 @@ ureq = { version = "3", features = ["platform-verifier"] }
 opt-level = 3
 lto = "thin"
 strip = true
+
+[dev-dependencies]
+http-body-util = "0.1"
+tower = { version = "0.5", features = ["util"] }
