@@ -72,8 +72,7 @@ pub fn ttk(attacker: &HeroStats, defender: &HeroStats, config: &CombatConfig) ->
     let resist_mult = 1.0 - bullet.final_resist;
 
     let effective_dmg_per_mag = bullet.damage_per_magazine * falloff * resist_mult;
-    let realistic_dmg_per_mag =
-        effective_dmg_per_mag * acc + effective_dmg_per_mag * acc * hs_rate * (hs_mult - 1.0);
+    let realistic_dmg_per_mag = effective_dmg_per_mag * acc + effective_dmg_per_mag * acc * hs_rate * (hs_mult - 1.0);
 
     let mut can_one_mag = realistic_dmg_per_mag > 0.0 && realistic_dmg_per_mag >= target_hp;
     let mut mags_needed = if realistic_dmg_per_mag > 0.0 {

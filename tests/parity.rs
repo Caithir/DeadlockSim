@@ -175,7 +175,12 @@ fn run_case(d: &GameData, kind: &str, a: &Value) -> Value {
         "spirit_total" => {
             let ups = simulation::upgrades_from_json(&a["upgrades"]);
             if ups.is_empty() {
-                json!(damage::hero_total_spirit_dps(hero("hero"), &SpiritContext::default(), None, &MeleeContext::default()))
+                json!(damage::hero_total_spirit_dps(
+                    hero("hero"),
+                    &SpiritContext::default(),
+                    None,
+                    &MeleeContext::default()
+                ))
             } else {
                 json!(damage::hero_total_spirit_dps(
                     hero("hero"),
@@ -325,7 +330,15 @@ fn run_case(d: &GameData, kind: &str, a: &Value) -> Value {
 
 #[test]
 fn matches_python_reference() {
-    let d = GameData::load().expect("api cache");
+    let mut d = GameData::load().expect("api cache");
+    // The reference implementation kept weapon falloff ranges in raw game units
+    // (so falloff never applied at realistic distances). This port stores meters;
+    // restore the raw units here so the reference numbers stay comparable.
+    for hero in d.heroes.values_mut() {
+        let raw = |meters: f64| (meters * data::UNITS_PER_METER * 1000.0).round() / 1000.0;
+        hero.falloff_range_min = raw(hero.falloff_range_min);
+        hero.falloff_range_max = raw(hero.falloff_range_max);
+    }
     let raw = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/python_reference.json"))
         .expect("fixture");
     let fixture: Value = serde_json::from_str(&raw).unwrap();

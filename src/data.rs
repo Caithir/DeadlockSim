@@ -62,16 +62,13 @@ impl GameData {
         names
             .iter()
             .map(|n| {
-                self.resolve_item(n)
-                    .cloned()
-                    .ok_or_else(|| format!("Item '{n}' not found.{}", suggest(&self.items, n)))
+                self.resolve_item(n).cloned().ok_or_else(|| format!("Item '{n}' not found.{}", suggest(&self.items, n)))
             })
             .collect()
     }
 
     pub fn hero_or_err(&self, name: &str) -> Result<&HeroStats, String> {
-        self.resolve_hero(name)
-            .ok_or_else(|| format!("Hero '{name}' not found.{}", suggest(&self.heroes, name)))
+        self.resolve_hero(name).ok_or_else(|| format!("Hero '{name}' not found.{}", suggest(&self.heroes, name)))
     }
 }
 
@@ -247,6 +244,9 @@ pub const SOUL_LEVEL_TABLE: &[(i64, i64, i64)] = &[
 /// Ability point costs per upgrade tier (T1, T2, T3).
 pub const ABILITY_TIER_COSTS: [i64; 3] = [1, 2, 5];
 
+/// Game distance units (inches) per meter. Weapon ranges in the API are in game units.
+pub const UNITS_PER_METER: f64 = 39.37;
+
 /// Highest boon count reachable through souls.
 pub const MAX_BOONS: i64 = 35;
 
@@ -265,11 +265,7 @@ pub fn boons_to_souls(boons: i64) -> i64 {
     if boons <= 0 {
         return 0;
     }
-    SOUL_LEVEL_TABLE
-        .iter()
-        .find(|r| r.1 >= boons)
-        .map(|r| r.0)
-        .unwrap_or_else(|| SOUL_LEVEL_TABLE.last().unwrap().0)
+    SOUL_LEVEL_TABLE.iter().find(|r| r.1 >= boons).map(|r| r.0).unwrap_or_else(|| SOUL_LEVEL_TABLE.last().unwrap().0)
 }
 
 /// Shop bonus tiers (game constants).
@@ -311,11 +307,7 @@ fn obj<'a>(v: &'a Value, key: &str) -> Option<&'a Map<String, Value>> {
 
 /// `d.get(a) or d.get(b, "")` over string fields.
 fn first_str(v: &Value, keys: &[&str]) -> String {
-    keys.iter()
-        .filter_map(|k| v.get(*k))
-        .find(|x| truthy(x))
-        .map(text)
-        .unwrap_or_default()
+    keys.iter().filter_map(|k| v.get(*k)).find(|x| truthy(x)).map(text).unwrap_or_default()
 }
 
 fn weapon_num(wi: &Value, key: &str, default: f64) -> f64 {
@@ -340,22 +332,15 @@ pub fn parse_hero_from_api(hero_data: &Value, hero_items: Option<&Value>, weapon
             .unwrap_or(0.0)
     };
 
-    let weapon_class = obj(hero_data, "items")
-        .and_then(|m| m.get("weapon_primary"))
-        .map(text)
-        .unwrap_or_default();
+    let weapon_class = obj(hero_data, "items").and_then(|m| m.get("weapon_primary")).map(text).unwrap_or_default();
 
     let hero_id_str = hero_data.get("id").map(text).unwrap_or_default();
-    let h_items: &[Value] = hero_items
-        .and_then(|hi| hi.get(&hero_id_str))
-        .and_then(Value::as_array)
-        .map(|v| v.as_slice())
-        .unwrap_or(&[]);
+    let h_items: &[Value] =
+        hero_items.and_then(|hi| hi.get(&hero_id_str)).and_then(Value::as_array).map(|v| v.as_slice()).unwrap_or(&[]);
 
     // Look for the weapon in the per-hero items first, then the global weapons list.
-    let mut weapon_source: Option<&Value> = h_items
-        .iter()
-        .find(|it| str_of(it, "type") == "weapon" && str_of(it, "class_name") == weapon_class);
+    let mut weapon_source: Option<&Value> =
+        h_items.iter().find(|it| str_of(it, "type") == "weapon" && str_of(it, "class_name") == weapon_class);
     if weapon_source.is_none() && !weapon_class.is_empty() {
         weapon_source = weapons_list.iter().find(|w| str_of(w, "class_name") == weapon_class);
     }
@@ -379,8 +364,9 @@ pub fn parse_hero_from_api(hero_data: &Value, hero_items: Option<&Value>, weapon
         if cycle_time > 0.0 {
             fire_rate = 1.0 / cycle_time;
         }
-        falloff_start = weapon_num(wi, "damage_falloff_start_range", 0.0);
-        falloff_end = weapon_num(wi, "damage_falloff_end_range", 0.0);
+        // Stored in meters so they compare directly with engagement distances.
+        falloff_start = weapon_num(wi, "damage_falloff_start_range", 0.0) / UNITS_PER_METER;
+        falloff_end = weapon_num(wi, "damage_falloff_end_range", 0.0) / UNITS_PER_METER;
         reload_dur = weapon_num(wi, "reload_duration", 0.0);
         can_zoom = wi.get("can_zoom").map(truthy).unwrap_or(false);
         crit_bonus_start = weapon_num(wi, "crit_bonus_start", 1.65);
@@ -412,7 +398,13 @@ pub fn parse_hero_from_api(hero_data: &Value, hero_items: Option<&Value>, weapon
         h_items.iter().filter(|it| str_of(it, "type") == "ability").map(parse_ability).collect();
 
     let flag = |k: &str| hero_data.get(k).map(truthy).unwrap_or(false);
-    let desc_field = |k: &str| if desc.is_object() { desc.get(k).filter(|v| truthy(v)).map(text).unwrap_or_default() } else { String::new() };
+    let desc_field = |k: &str| {
+        if desc.is_object() {
+            desc.get(k).filter(|v| truthy(v)).map(text).unwrap_or_default()
+        } else {
+            String::new()
+        }
+    };
 
     HeroStats {
         hero_id: hero_data.get("id").and_then(Value::as_i64).unwrap_or(0),
@@ -621,7 +613,7 @@ pub fn parse_ability(item_data: &Value) -> HeroAbility {
         melee_scale: parse_melee_scale(&props),
         is_dps,
         upgrades,
-        properties: props,
+        properties: props.into(),
     }
 }
 
@@ -664,15 +656,21 @@ pub fn parse_upgrade_item(item_data: &Value) -> Option<Item> {
         description,
         is_active: item_data.get("is_active_item").map(truthy).unwrap_or(false),
         activation: str_of(item_data, "activation").to_string(),
-        tooltip_sections: item_data.get("tooltip_sections").and_then(Value::as_array).cloned().unwrap_or_default(),
+        tooltip_sections: item_data
+            .get("tooltip_sections")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .into(),
         ..Default::default()
     };
 
     let mut stats: IndexMap<&'static str, f64> = IndexMap::new();
+    let mut raw_properties: Map<String, Value> = Map::new();
     for (key, prop) in &props {
         let Some(p) = prop.as_object() else { continue };
         let Some(val) = p.get("value").filter(|v| !v.is_null()) else { continue };
-        item.raw_properties.insert(key.clone(), prop.clone());
+        raw_properties.insert(key.clone(), prop.clone());
 
         if let Some(cond) = p.get("conditional").filter(|c| truthy(c)) {
             item.condition = text(cond);
@@ -703,6 +701,7 @@ pub fn parse_upgrade_item(item_data: &Value) -> Option<Item> {
             *stats.entry(mapped).or_insert(0.0) += fval;
         }
     }
+    item.raw_properties = raw_properties.into();
     for (field, v) in stats {
         item.set_stat(field, v);
     }

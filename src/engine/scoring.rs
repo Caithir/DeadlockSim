@@ -98,6 +98,15 @@ fn analytic(hero: &HeroStats, stats: &BuildStats, boons: i64, cfg: &ScoringConfi
     (gun, spirit, resist_weighted_ehp(hero, boons, stats))
 }
 
+/// A candidate purchase: the item and the build that results from buying it.
+#[derive(Debug, Clone)]
+pub struct Trial {
+    pub item_name: String,
+    /// Souls the purchase costs (used for the per-soul metrics).
+    pub cost: i64,
+    pub build: Build,
+}
+
 /// Score each candidate item against `baseline_build`. Returns item name → score.
 pub fn score_candidates(
     hero: &HeroStats,
@@ -107,17 +116,33 @@ pub fn score_candidates(
     mode: ScoreMode,
     cfg: &ScoringConfig,
 ) -> IndexMap<String, ItemScore> {
+    let trials: Vec<Trial> = candidates
+        .iter()
+        .map(|item| Trial { item_name: item.name.clone(), cost: item.cost, build: baseline_build.with(item) })
+        .collect();
+    score_trials(hero, baseline_build, &trials, boons, mode, cfg)
+}
+
+/// Score prepared trial builds against `baseline_build`. Returns item name → score.
+pub fn score_trials(
+    hero: &HeroStats,
+    baseline_build: &Build,
+    trials: &[Trial],
+    boons: i64,
+    mode: ScoreMode,
+    cfg: &ScoringConfig,
+) -> IndexMap<String, ItemScore> {
     let conds = cfg.enabled_conditionals.as_ref();
+    let per_soul = |cost: i64| if cost != 0 { cost as f64 } else { 1.0 };
     if mode == ScoreMode::Fast {
         let (cur_gun, cur_spirit, cur_ehp) = analytic(hero, &aggregate_stats(baseline_build, conds), boons, cfg);
-        return candidates
+        return trials
             .iter()
-            .map(|item| {
-                let stats = aggregate_stats(&baseline_build.with(item), conds);
-                let (gun, spirit, ehp) = analytic(hero, &stats, boons, cfg);
-                let cost = if item.cost != 0 { item.cost as f64 } else { 1.0 };
+            .map(|t| {
+                let (gun, spirit, ehp) = analytic(hero, &aggregate_stats(&t.build, conds), boons, cfg);
+                let cost = per_soul(t.cost);
                 let score = ItemScore {
-                    item_name: item.name.clone(),
+                    item_name: t.item_name.clone(),
                     dps_delta: gun - cur_gun,
                     spirit_dps_delta: spirit - cur_spirit,
                     ehp_delta: ehp - cur_ehp,
@@ -125,7 +150,7 @@ pub fn score_candidates(
                     ehp_per_soul: (ehp - cur_ehp) / cost,
                     ..Default::default()
                 };
-                (item.name.clone(), score)
+                (t.item_name.clone(), score)
             })
             .collect();
     }
@@ -160,17 +185,16 @@ pub fn score_candidates(
     let base_dps = sim_dps(baseline_build.clone());
     let base_ehp = resist_weighted_ehp(hero, boons, &aggregate_stats(baseline_build, conds));
 
-    candidates
+    trials
         .iter()
-        .map(|item| {
-            let test_build = baseline_build.with(item);
-            let test_ehp = resist_weighted_ehp(hero, boons, &aggregate_stats(&test_build, conds));
-            let test_dps = sim_dps(test_build);
-            let cost = if item.cost != 0 { item.cost as f64 } else { 1.0 };
-            let dps_delta = test_dps - base_dps + cfg.custom_item_dps.get(&item.name).copied().unwrap_or(0.0);
-            let ehp_delta = test_ehp - base_ehp + cfg.custom_item_ehp.get(&item.name).copied().unwrap_or(0.0);
+        .map(|t| {
+            let test_ehp = resist_weighted_ehp(hero, boons, &aggregate_stats(&t.build, conds));
+            let test_dps = sim_dps(t.build.clone());
+            let cost = per_soul(t.cost);
+            let dps_delta = test_dps - base_dps + cfg.custom_item_dps.get(&t.item_name).copied().unwrap_or(0.0);
+            let ehp_delta = test_ehp - base_ehp + cfg.custom_item_ehp.get(&t.item_name).copied().unwrap_or(0.0);
             let score = ItemScore {
-                item_name: item.name.clone(),
+                item_name: t.item_name.clone(),
                 sim_dps_delta: dps_delta,
                 sim_ehp_delta: ehp_delta,
                 sim_dps: test_dps,
@@ -179,7 +203,7 @@ pub fn score_candidates(
                 sim_ehp_per_soul: ehp_delta / cost,
                 ..Default::default()
             };
-            (item.name.clone(), score)
+            (t.item_name.clone(), score)
         })
         .collect()
 }

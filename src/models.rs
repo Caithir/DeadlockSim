@@ -1,5 +1,7 @@
 //! Data models for Deadlock heroes, items, and combat state.
 
+use std::sync::Arc;
+
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -32,8 +34,8 @@ pub struct HeroAbility {
     /// True when `base_damage` was derived from a DPS property (pre-multiplied by duration).
     pub is_dps: bool,
     pub upgrades: Vec<AbilityUpgrade>,
-    /// All raw properties from the API.
-    pub properties: Map<String, Value>,
+    /// All raw properties from the API (shared, so clones stay cheap).
+    pub properties: Arc<Map<String, Value>>,
 }
 
 /// Base stats for a Deadlock hero, loaded from data.
@@ -406,11 +408,11 @@ pub struct Item {
     pub condition: String,
     /// Stats only active under specific triggers; keys are stat field names.
     pub conditional_stats: IndexMap<String, f64>,
-    /// All raw properties from the API.
-    pub raw_properties: Map<String, Value>,
+    /// All raw properties from the API (shared, so clones stay cheap).
+    pub raw_properties: Arc<Map<String, Value>>,
 
     pub activation: String,
-    pub tooltip_sections: Vec<Value>,
+    pub tooltip_sections: Arc<Vec<Value>>,
     /// Name of the item this upgrades into.
     pub upgrades_to: String,
     /// Names of the items this is built from.

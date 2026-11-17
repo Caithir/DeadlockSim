@@ -4,6 +4,7 @@
 #
 # Prerequisites:
 #   - Azure CLI installed and logged in (az login)
+#   - Rust with the x86_64-unknown-linux-musl target, musl-tools and zip
 #   - Subscription selected (az account set --subscription <id>)
 
 set -euo pipefail
@@ -18,37 +19,43 @@ echo "Resource Group: $RESOURCE_GROUP"
 echo "Source:         $PROJECT_ROOT"
 echo ""
 
+TARGET="x86_64-unknown-linux-musl"
+PACKAGE_DIR="$(mktemp -d)"
+trap 'rm -rf "$PACKAGE_DIR"' EXIT
+
+# Build a static binary (needs: rustup target add $TARGET, and musl-tools)
+echo "Building release binary..."
+cd "$PROJECT_ROOT"
+cargo build --release --locked --target "$TARGET"
+
+echo "Assembling deployment package..."
+cp "target/$TARGET/release/deadlock-sim" startup.sh "$PACKAGE_DIR/"
+cp -r data "$PACKAGE_DIR/data"
+(cd "$PACKAGE_DIR" && zip -qr package.zip deadlock-sim startup.sh data)
+
 # Configure the startup command
 echo "Setting startup command..."
 az webapp config set \
   --resource-group "$RESOURCE_GROUP" \
   --name "$APP_NAME" \
-  --startup-file "startup.sh"
+  --startup-file "bash startup.sh"
 
-# Configure app settings
+# The package is prebuilt: skip the Oryx build
 echo "Configuring app settings..."
 az webapp config appsettings set \
   --resource-group "$RESOURCE_GROUP" \
   --name "$APP_NAME" \
   --settings \
-    SCM_DO_BUILD_DURING_DEPLOYMENT=true \
-    WEBSITES_PORT=8080 \
+    SCM_DO_BUILD_DURING_DEPLOYMENT=false \
     WEBSITE_HEALTHCHECK_MAXPINGFAILURES=5
 
-# Enable WebSockets (required by NiceGUI)
-az webapp config set \
-  --resource-group "$RESOURCE_GROUP" \
-  --name "$APP_NAME" \
-  --web-sockets-enabled true
-
-# Deploy code via zip deploy
 echo ""
-echo "Deploying code..."
-cd "$PROJECT_ROOT"
-az webapp up \
+echo "Deploying package..."
+az webapp deploy \
   --resource-group "$RESOURCE_GROUP" \
   --name "$APP_NAME" \
-  --runtime "PYTHON:3.14"
+  --src-path "$PACKAGE_DIR/package.zip" \
+  --type zip
 
 echo ""
 echo "=== Deployment complete ==="

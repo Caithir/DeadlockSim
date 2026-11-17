@@ -73,11 +73,8 @@ pub fn extract_item_damage(props: &Map<String, Value>) -> Option<ItemDamageInfo>
     })?;
 
     let scale_fn = prop.get("scale_function").and_then(Value::as_object);
-    let scale_type = scale_fn
-        .and_then(|sf| sf.get("specific_stat_scale_type"))
-        .and_then(Value::as_str)
-        .unwrap_or("")
-        .to_string();
+    let scale_type =
+        scale_fn.and_then(|sf| sf.get("specific_stat_scale_type")).and_then(Value::as_str).unwrap_or("").to_string();
     let stat_scale = scale_fn.and_then(|sf| sf.get("stat_scale")).and_then(num).unwrap_or(0.0);
 
     let nonempty = |k: &str| props.get(k).filter(|v| crate::models::truthy(v));
@@ -121,11 +118,8 @@ pub fn prop_float(props: &Map<String, Value>, key: &str, default: f64) -> f64 {
 
 /// `(scale type, coefficient)` of a property's scale function.
 pub fn prop_scale(props: &Map<String, Value>, key: &str) -> (String, f64) {
-    let Some(sf) = props
-        .get(key)
-        .and_then(Value::as_object)
-        .and_then(|p| p.get("scale_function"))
-        .and_then(Value::as_object)
+    let Some(sf) =
+        props.get(key).and_then(Value::as_object).and_then(|p| p.get("scale_function")).and_then(Value::as_object)
     else {
         return (String::new(), 0.0);
     };

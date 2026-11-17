@@ -338,7 +338,7 @@ pub fn evaluate_build(hero: &HeroStats, build: &Build, o: &EvalOptions) -> Build
 
 // ── Greedy gun optimizers ──────────────────────────────────────────
 
-fn offensive_candidates<'a>(items: &'a IndexMap<String, Item>, budget: i64, exclude_conditional: bool) -> Vec<&'a Item> {
+fn offensive_candidates(items: &IndexMap<String, Item>, budget: i64, exclude_conditional: bool) -> Vec<&Item> {
     items
         .values()
         .filter(|item| !(exclude_conditional && !item.condition.is_empty()))

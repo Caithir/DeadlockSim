@@ -42,7 +42,7 @@ fn cache_path(name: &str) -> PathBuf {
     data_dir().join("api_cache").join(format!("{name}.json"))
 }
 
-fn base_url() -> String {
+pub fn base_url() -> String {
     std::env::var("DEADLOCKSIM_API_URL").unwrap_or_else(|_| BASE_URL.to_string())
 }
 
@@ -50,16 +50,11 @@ fn base_url() -> String {
 pub fn http_get(url: &str) -> Result<String, String> {
     let config = ureq::Agent::config_builder()
         .timeout_global(Some(TIMEOUT))
-        .tls_config(
-            ureq::tls::TlsConfig::builder().root_certs(ureq::tls::RootCerts::PlatformVerifier).build(),
-        )
+        .tls_config(ureq::tls::TlsConfig::builder().root_certs(ureq::tls::RootCerts::PlatformVerifier).build())
         .build();
     let agent: ureq::Agent = config.into();
-    let mut resp = agent
-        .get(url)
-        .header("User-Agent", "deadlock-sim")
-        .call()
-        .map_err(|e| format!("GET {url} failed: {e}"))?;
+    let mut resp =
+        agent.get(url).header("User-Agent", "deadlock-sim").call().map_err(|e| format!("GET {url} failed: {e}"))?;
     resp.body_mut()
         .with_config()
         .limit(256 * 1024 * 1024)
@@ -124,9 +119,8 @@ pub fn refresh_all_data(language: &str) -> Result<RefreshSummary, String> {
     let hero_list = heroes.as_array().ok_or("heroes endpoint did not return a list")?;
     let item_list = items.as_array().ok_or("items endpoint did not return a list")?;
 
-    let of_type = |t: &str| -> Value {
-        Value::Array(item_list.iter().filter(|i| str_of(i, "type") == t).cloned().collect())
-    };
+    let of_type =
+        |t: &str| -> Value { Value::Array(item_list.iter().filter(|i| str_of(i, "type") == t).cloned().collect()) };
     let (abilities, weapons, upgrades) = (of_type("ability"), of_type("weapon"), of_type("upgrade"));
 
     // Items per hero, for ability mapping.

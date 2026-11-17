@@ -19,42 +19,50 @@ Write-Host "Resource Group: $ResourceGroup"
 Write-Host "Source:         $ProjectRoot"
 Write-Host ""
 
+$Target = "x86_64-unknown-linux-musl"
+$PackageDir = Join-Path ([System.IO.Path]::GetTempPath()) ("deadlocksim-" + [guid]::NewGuid())
+New-Item -ItemType Directory -Path $PackageDir | Out-Null
+
+# Build a static Linux binary. Cross-compiling from Windows needs a musl
+# cross toolchain (for example `cargo install cross`, then use `cross build`).
+Write-Host "Building release binary..."
+Push-Location $ProjectRoot
+try {
+    cargo build --release --locked --target $Target
+    if ($LASTEXITCODE -ne 0) { throw "cargo build failed" }
+    Copy-Item "target/$Target/release/deadlock-sim", "startup.sh" $PackageDir
+    Copy-Item "data" (Join-Path $PackageDir "data") -Recurse
+}
+finally {
+    Pop-Location
+}
+$Zip = Join-Path $PackageDir "package.zip"
+Compress-Archive -Path (Join-Path $PackageDir "*") -DestinationPath $Zip
+
 # Configure the startup command
 Write-Host "Setting startup command..."
 az webapp config set `
     --resource-group $ResourceGroup `
     --name $AppName `
-    --startup-file "startup.sh"
+    --startup-file "bash startup.sh"
 
-# Configure app settings
+# The package is prebuilt: skip the Oryx build
 Write-Host "Configuring app settings..."
 az webapp config appsettings set `
     --resource-group $ResourceGroup `
     --name $AppName `
     --settings `
-        SCM_DO_BUILD_DURING_DEPLOYMENT=true `
-        WEBSITES_PORT=8080 `
+        SCM_DO_BUILD_DURING_DEPLOYMENT=false `
         WEBSITE_HEALTHCHECK_MAXPINGFAILURES=5
 
-# Enable WebSockets (required by NiceGUI)
-az webapp config set `
+Write-Host ""
+Write-Host "Deploying package..."
+az webapp deploy `
     --resource-group $ResourceGroup `
     --name $AppName `
-    --web-sockets-enabled true
-
-# Deploy code via zip deploy
-Write-Host ""
-Write-Host "Deploying code..."
-Push-Location $ProjectRoot
-try {
-    az webapp up `
-        --resource-group $ResourceGroup `
-        --name $AppName `
-        --runtime "PYTHON:3.14"
-}
-finally {
-    Pop-Location
-}
+    --src-path $Zip `
+    --type zip
+Remove-Item $PackageDir -Recurse -Force
 
 Write-Host ""
 Write-Host "=== Deployment complete ===" -ForegroundColor Green

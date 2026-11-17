@@ -279,8 +279,7 @@ pub fn calculate_spirit(ability: &AbilityConfig) -> SpiritResult {
 pub fn dps_with_accuracy(hero: &HeroStats, config: &CombatConfig) -> f64 {
     let result = calculate_bullet(hero, config);
     let base_hit_dps = result.final_dps * config.accuracy;
-    let headshot_bonus =
-        result.final_dps * config.accuracy * config.headshot_rate * (config.headshot_multiplier - 1.0);
+    let headshot_bonus = result.final_dps * config.accuracy * config.headshot_rate * (config.headshot_multiplier - 1.0);
     base_hit_dps + headshot_bonus
 }
 

@@ -1,6 +1,11 @@
 # DeadlockSim — Azure Infrastructure
 
-ARM templates and deploy scripts for running DeadlockSim on Azure App Service (Linux/Python).
+ARM templates and deploy scripts for running DeadlockSim on Azure App Service (Linux).
+
+The app is a single static Rust binary (`deadlock-sim`) plus the `data/` directory. The deploy scripts
+and the GitHub workflow build the binary, zip it with `data/` and `startup.sh`, and run it through the
+app's startup command, so the built-in runtime stack only provides the Linux container. A `Dockerfile`
+at the repository root is available for container-based hosting instead.
 
 ## Current Deployment
 
@@ -28,7 +33,8 @@ The web app already exists. To push code changes:
 ./infra/deploy-code.sh
 ```
 
-This configures the startup command, app settings, WebSockets, and deploys the code via `az webapp up`.
+This builds a static release binary, configures the startup command and app settings, and zip-deploys the package.
+It needs Rust with the `x86_64-unknown-linux-musl` target and `musl-tools`.
 
 ### View Logs
 

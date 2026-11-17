@@ -12,8 +12,7 @@ permissions:
 env:
   AZURE_WEBAPP_NAME: deadlocksim
   AZURE_WEBAPP_RESOURCE_GROUP: deadlocksim-rg
-  PYTHON_VERSION: "3.14"
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  TARGET: x86_64-unknown-linux-musl
 
 jobs:
   deploy:
@@ -24,10 +23,29 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
+          targets: ${{ env.TARGET }}
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install musl toolchain
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - name: Test
+        run: cargo test --locked
+
+      - name: Build static release binary
+        run: cargo build --release --locked --target "$TARGET"
+
+      - name: Assemble deployment package
+        run: |
+          mkdir -p package
+          cp "target/$TARGET/release/deadlock-sim" startup.sh package/
+          cp -r data package/data
+          chmod +x package/deadlock-sim package/startup.sh
 
       - name: Login to Azure
         uses: azure/login@v2
@@ -41,22 +59,19 @@ jobs:
           az webapp config set \
             --resource-group $AZURE_WEBAPP_RESOURCE_GROUP \
             --name $AZURE_WEBAPP_NAME \
-            --startup-file "startup.sh"
+            --startup-file "bash startup.sh"
 
+          # The package is prebuilt: skip the Oryx build.
           az webapp config appsettings set \
             --resource-group $AZURE_WEBAPP_RESOURCE_GROUP \
             --name $AZURE_WEBAPP_NAME \
             --settings \
-              SCM_DO_BUILD_DURING_DEPLOYMENT=true \
+              SCM_DO_BUILD_DURING_DEPLOYMENT=false \
               WEBSITE_HEALTHCHECK_MAXPINGFAILURES=5
-
-          az webapp config set \
-            --resource-group $AZURE_WEBAPP_RESOURCE_GROUP \
-            --name $AZURE_WEBAPP_NAME \
-            --web-sockets-enabled true
 
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
         with:
           app-name: ${{ env.AZURE_WEBAPP_NAME }}
           resource-group-name: ${{ env.AZURE_WEBAPP_RESOURCE_GROUP }}
+          package: package

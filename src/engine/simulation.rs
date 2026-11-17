@@ -277,12 +277,7 @@ fn collect_debuffs(props: &Map<String, Value>) -> Vec<OnHitDebuff> {
         ("BulletArmorDamageReduction", DebuffType::BulletResistShred, 100.0, pf("AbilityDuration", 7.0)),
         ("FireRateSlow", DebuffType::FireRateSlow, 1.0, pf("AbilityDuration", 5.0)),
         ("SlowPercent", DebuffType::MoveSpeedSlow, 1.0, pf("SlowDuration", pf("AbilityDuration", 4.0))),
-        (
-            "HealAmpReceivePenaltyPercent",
-            DebuffType::HealReduction,
-            1.0,
-            pf("AbilityDuration", pf("DotDuration", 5.0)),
-        ),
+        ("HealAmpReceivePenaltyPercent", DebuffType::HealReduction, 1.0, pf("AbilityDuration", pf("DotDuration", 5.0))),
         ("DamageReceivedIncrease", DebuffType::DamageAmp, 1.0, pf("AbilityDuration", 5.0)),
     ];
     for (key, debuff_type, divisor, duration) in simple {
@@ -400,10 +395,19 @@ enum EventKind {
     /// A DoT tick from an item, by item name.
     ItemDotTick,
     /// A DoT tick from an ability, with its pre-computed raw damage.
-    AbilityDotTick { damage: f64 },
-    ActiveUse { use_on_cooldown: bool },
-    AbilityUse { ability_index: usize, use_on_cooldown: bool },
-    MeleeHit { heavy: bool },
+    AbilityDotTick {
+        damage: f64,
+    },
+    ActiveUse {
+        use_on_cooldown: bool,
+    },
+    AbilityUse {
+        ability_index: usize,
+        use_on_cooldown: bool,
+    },
+    MeleeHit {
+        heavy: bool,
+    },
     PulseTrigger,
     RegenTick,
     SimEnd,
@@ -747,8 +751,7 @@ impl Simulator<'_> {
         let stats = aggregate_stats(build, None);
 
         let weapon_bonus = stats.weapon_damage_pct;
-        let dmg_per_bullet =
-            bullet_damage_at_boon(hero, boons) * effective_pellets(hero) as f64 * (1.0 + weapon_bonus);
+        let dmg_per_bullet = bullet_damage_at_boon(hero, boons) * effective_pellets(hero) as f64 * (1.0 + weapon_bonus);
         let fire_rate = fire_rate_with_bonus(hero, stats.fire_rate_pct);
         let mag_size = effective_magazine(hero, stats.ammo_pct, stats.ammo_flat);
         let spirit_power = (hero.spirit_gain * boons as f64 + stats.spirit_power) * (1.0 + stats.spirit_power_pct);
@@ -1010,8 +1013,7 @@ impl Simulator<'_> {
 
     /// Add buildup from a bullet hit; trigger the DoT at 100%.
     fn advance_buildup(&mut self, t: f64, b: &ItemBehavior, actor: &mut CombatantState, cid: usize) {
-        let (mut current, last_time) =
-            actor.attack.buildup_trackers.get(&b.item_name).copied().unwrap_or((0.0, 0.0));
+        let (mut current, last_time) = actor.attack.buildup_trackers.get(&b.item_name).copied().unwrap_or((0.0, 0.0));
         if last_time > 0.0 && (t - last_time) > b.buildup_decay_time {
             current = 0.0;
         }
@@ -1232,7 +1234,13 @@ impl Simulator<'_> {
             let num_ticks = u.duration as i64;
             let dmg_per_tick = if num_ticks > 0 { raw / num_ticks as f64 } else { raw };
             for i in 0..num_ticks {
-                self.push(t + (i as f64 + 1.0), 6, cid, EventKind::AbilityDotTick { damage: dmg_per_tick }, name.clone());
+                self.push(
+                    t + (i as f64 + 1.0),
+                    6,
+                    cid,
+                    EventKind::AbilityDotTick { damage: dmg_per_tick },
+                    name.clone(),
+                );
             }
         } else {
             self.apply_spirit_damage(t, name, raw, actor, opponent, cid);
@@ -1249,13 +1257,28 @@ impl Simulator<'_> {
     }
 
     /// Process a melee hit (light or heavy).
-    fn handle_melee_hit(&mut self, ev: &SimEvent, heavy: bool, actor: &mut CombatantState, opponent: &mut CombatantState) {
+    fn handle_melee_hit(
+        &mut self,
+        ev: &SimEvent,
+        heavy: bool,
+        actor: &mut CombatantState,
+        opponent: &mut CombatantState,
+    ) {
         let raw = if heavy { actor.attack.heavy_melee_damage } else { actor.attack.light_melee_damage };
         let resist = opponent.defense.effective_bullet_resist(ev.time);
         let damage_amp = opponent.defense.effective_damage_amp(ev.time);
         let final_dmg = raw * (1.0 + damage_amp) * (1.0 - resist);
         if final_dmg > 0.0 {
-            self.apply_damage(ev.time, ev.source.clone(), final_dmg, DamageType::Melee, ev.combatant, actor, opponent, false);
+            self.apply_damage(
+                ev.time,
+                ev.source.clone(),
+                final_dmg,
+                DamageType::Melee,
+                ev.combatant,
+                actor,
+                opponent,
+                false,
+            );
         }
     }
 

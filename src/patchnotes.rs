@@ -268,8 +268,7 @@ fn extract_ability_from_stat(change: &mut PatchChange) {
 pub fn parse_patch_notes(text: &str) -> Vec<PatchChange> {
     static FROM_TO: OnceLock<Regex> = OnceLock::new();
     static TIER: OnceLock<Regex> = OnceLock::new();
-    let from_to_re =
-        re(&FROM_TO, r"(?i)(?:increased|reduced|changed|went|rescaled)\s+from\s+(.+?)\s+to\s+(.+?)$");
+    let from_to_re = re(&FROM_TO, r"(?i)(?:increased|reduced|changed|went|rescaled)\s+from\s+(.+?)\s+to\s+(.+?)$");
     let tier_re = re(&TIER, r"(?i)^T([123])\s+");
 
     let mut changes = Vec::new();
@@ -617,10 +616,8 @@ pub fn apply_patch(changes: &[PatchChange], heroes: &mut IndexMap<String, HeroSt
                     *slot = new;
                 }
             }
-            None => applied.push(format!(
-                "{}: {} {} -> {} (unmapped stat)",
-                change.hero, ab.name, change.stat, change.new_value
-            )),
+            None => applied
+                .push(format!("{}: {} {} -> {} (unmapped stat)", change.hero, ab.name, change.stat, change.new_value)),
         }
     }
     applied
@@ -637,7 +634,8 @@ pub fn save_patch(date_str: &str, text: &str, url: &str) -> Result<PathBuf, Stri
     let dir = patch_dir();
     fs::create_dir_all(&dir).map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
     let path = dir.join(format!("{date_str}.txt"));
-    fs::write(&path, format!("# Source: {url}\n\n{text}")).map_err(|e| format!("cannot write {}: {e}", path.display()))?;
+    fs::write(&path, format!("# Source: {url}\n\n{text}"))
+        .map_err(|e| format!("cannot write {}: {e}", path.display()))?;
     Ok(path)
 }
 
