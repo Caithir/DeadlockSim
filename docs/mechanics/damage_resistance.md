@@ -106,7 +106,7 @@ Most heroes start with **0%** bullet and spirit resist. Notable exceptions:
 
 ## Simulation Implementation Notes
 
-In the codebase simulation (`simulation.py`):
+In the codebase simulation (`src/engine/simulation.rs`):
 - Bullet resist shred and spirit resist shred are tracked as **debuff pools**
 - Multiple shred sources stack **additively** within the pool
 - Total shred is clamped to [0, 1] before application

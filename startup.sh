@@ -1,7 +1,8 @@
 #!/bin/bash
-# Azure App Service startup script for DeadlockSim (NiceGUI)
+# Azure App Service startup script for DeadlockSim.
+# The deployment package contains the prebuilt `deadlock-sim` binary and `data/`.
+# Azure sets PORT (or WEBSITES_PORT); the server must accept remote connections, hence 0.0.0.0.
 set -e
-
-# Dependencies are installed by Oryx during deployment (SCM_DO_BUILD_DURING_DEPLOYMENT).
-# Run the GUI module directly — reads PORT env var set by Azure (default 8000).
-exec python -m deadlock_sim.ui.gui
+cd "$(dirname "$0")"
+chmod +x ./deadlock-sim
+exec ./deadlock-sim serve --host 0.0.0.0 --port "${PORT:-${WEBSITES_PORT:-8080}}"

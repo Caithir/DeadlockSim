@@ -23,12 +23,11 @@
         "description": "App Service Plan SKU."
       }
     },
-    "pythonVersion": {
+    "runtimeStack": {
       "type": "string",
-      "defaultValue": "3.14",
-      "allowedValues": ["3.10", "3.11", "3.12", "3.13", "3.14"],
+      "defaultValue": "PYTHON|3.14",
       "metadata": {
-        "description": "Python runtime version."
+        "description": "Built-in Linux image (linuxFxVersion) that hosts the app. The app is a static binary started by startup.sh, so any built-in stack works; it only provides the Linux container."
       }
     },
     "existingAppServicePlanId": {
@@ -253,17 +252,17 @@
         "httpsOnly": true,
         "virtualNetworkSubnetId": "[if(equals(parameters('skuName'), 'F1'), null(), resourceId('Microsoft.Network/virtualNetworks/subnets', variables('vnetName'), variables('appSubnetName')))]",
         "siteConfig": {
-          "linuxFxVersion": "[format('PYTHON|{0}', parameters('pythonVersion'))]",
+          "linuxFxVersion": "[parameters('runtimeStack')]",
           "alwaysOn": "[not(equals(parameters('skuName'), 'F1'))]",
           "ftpsState": "Disabled",
           "http20Enabled": true,
           "minTlsVersion": "1.2",
           "webSocketsEnabled": true,
-          "appCommandLine": "startup.sh",
+          "appCommandLine": "bash startup.sh",
           "appSettings": [
             {
               "name": "SCM_DO_BUILD_DURING_DEPLOYMENT",
-              "value": "true"
+              "value": "false"
             },
             {
               "name": "WEBSITES_PORT",

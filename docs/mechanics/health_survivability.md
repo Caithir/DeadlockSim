@@ -39,7 +39,7 @@ Investing souls in the **Vitality** item category grants cumulative bonus Max He
 
 Values from the wiki Hero Attributes Table. Format: Base HP | +HP/Boon | HP at 35 Boons.
 
-All hero base HP and per-boon gains are loaded from the API via `data.py:load_heroes()` fields:
+All hero base HP and per-boon gains are loaded from the API via `load_heroes()` in `src/data.rs`, into these `HeroStats` fields:
 - `base_hp`: Starting health
 - `hp_gain`: Health gained per boon (parsed from `EMaxHealth` or `MODIFIER_VALUE_BASE_HEALTH_FROM_LEVEL`)
 

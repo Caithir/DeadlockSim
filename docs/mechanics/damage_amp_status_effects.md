@@ -33,7 +33,7 @@ Damage amplification increases ALL damage taken by the target. Applied as a fina
 
 ## Simulation Implementation
 
-In `simulation.py`, damage amp is tracked as a **debuff pool** on the target:
+In `src/engine/simulation.rs`, damage amp is tracked as a **debuff pool** on the target:
 
 ```
 damage_amp = SUM(damage_amp_debuffs) / 100
@@ -41,8 +41,8 @@ final_damage = raw_damage × (1 + damage_amp)
 ```
 
 Debuff types tracked:
-- `DAMAGE_AMP`: From `DamageReceivedIncrease` property
-- `SPIRIT_AMP_STACK`: Escalating Exposure stacks (capped at `max_stacks`)
+- `DebuffType::DamageAmp`: From `DamageReceivedIncrease` property
+- `DebuffType::SpiritAmpStack`: Escalating Exposure stacks (capped at `max_stacks`)
 
 ---
 
@@ -108,17 +108,17 @@ Debuff types tracked:
 
 ## Simulation Debuff Tracking
 
-The codebase tracks debuffs by **mechanic type** (not by item name):
+The simulation tracks debuffs by **mechanic type** (`DebuffType` in `src/engine/simulation.rs`), not by item name:
 
 | Debuff Type         | Pool Behavior  | Sources                        |
 |---------------------|---------------|--------------------------------|
-| SPIRIT_RESIST_SHRED | Additive pool | Decay, spirit shred items      |
-| BULLET_RESIST_SHRED | Additive pool | Armor Piercing Rounds          |
-| SPIRIT_AMP_STACK    | Stacking      | Escalating Exposure            |
-| FIRE_RATE_SLOW      | Additive pool | Slowing items                  |
-| MOVE_SPEED_SLOW     | Additive pool | Movement slow items            |
-| HEAL_REDUCTION      | Additive pool | Toxic Bullets, healing cut items|
-| DAMAGE_AMP          | Additive pool | Crippling Headshot, Soulshredder|
+| SpiritResistShred   | Additive pool | Decay, spirit shred items      |
+| BulletResistShred   | Additive pool | Armor Piercing Rounds          |
+| SpiritAmpStack      | Stacking      | Escalating Exposure            |
+| FireRateSlow        | Additive pool | Slowing items                  |
+| MoveSpeedSlow       | Additive pool | Movement slow items            |
+| HealReduction       | Additive pool | Toxic Bullets, healing cut items|
+| DamageAmp           | Additive pool | Crippling Headshot, Soulshredder|
 
 Each debuff instance has:
 - Source identifier

@@ -11,8 +11,8 @@
     "skuName": {
       "value": "P0v3"
     },
-    "pythonVersion": {
-      "value": "3.14"
+    "runtimeStack": {
+      "value": "PYTHON|3.14"
     },
     "existingAppServicePlanId": {
       "value": "/subscriptions/cc05efe5-7259-4c47-af9f-904b5a42fc8a/resourceGroups/deadlocksim-rg/providers/Microsoft.Web/serverfarms/ASP-deadlocksimrg-8ec5"

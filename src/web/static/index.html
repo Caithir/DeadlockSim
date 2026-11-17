@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Deadlock Combat Simulator</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="topbar">
+  <h1>Deadlock Combat Simulator</h1>
+  <span id="data-info" class="muted"></span>
+  <span class="spacer"></span>
+  <button id="btn-refresh" class="ghost" title="Fetch the latest hero and item data from the Deadlock Assets API">Refresh data</button>
+  <button id="btn-feedback" class="ghost">Feedback</button>
+  <button id="btn-help" class="ghost" title="Keyboard shortcuts">?</button>
+</header>
+<nav class="tabs" id="tabs" role="tablist"></nav>
+<main id="main"><p class="muted pad">Loading data…</p></main>
+<div id="tooltip" class="tooltip" hidden></div>
+<div id="toasts" class="toasts" aria-live="polite"></div>
+<dialog id="dialog"></dialog>
+<script src="/app.js"></script>
+</body>
+</html>
